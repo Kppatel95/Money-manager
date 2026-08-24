@@ -4,12 +4,14 @@ import { expensesApi } from '../api/client'
 import type { CategorySummary, Expense, ExpenseFilters, ExpenseInput } from '../types'
 import { ExpenseForm } from './ExpenseForm'
 import { ExpenseList } from './ExpenseList'
+import { CategoryBreakdown } from './CategoryBreakdown'
 
 export function Dashboard() {
   const { user, logout } = useAuth()
 
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [summary, setSummary] = useState<CategorySummary[]>([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -27,6 +29,7 @@ export function Dashboard() {
       ])
       setExpenses(expensesRes.data)
       setSummary(summaryRes.data)
+      setTotal(summaryRes.total)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load your expenses.')
     } finally {
@@ -101,6 +104,11 @@ export function Dashboard() {
         <section className="panel">
           <h2>Add an expense</h2>
           <ExpenseForm onSubmit={handleCreate} />
+        </section>
+
+        <section className="panel">
+          <h2>Spending by category</h2>
+          <CategoryBreakdown summary={summary} total={total} loading={loading} />
         </section>
 
         <section className="panel panel-wide">
