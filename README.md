@@ -92,22 +92,3 @@ npm run dev
 
 `npm run build` produces a production bundle in `frontend/dist/`;
 `npm run preview` serves that bundle locally.
-
-## Notes on how this was built
-
-This project was scaffolded in a sandboxed environment with no access to
-the npm or Packagist registries, which shaped two things worth calling out
-if you're reading the source:
-
-- **Backend:** `composer.json` requires `firebase/php-jwt` and
-  `phpunit/phpunit` the normal way. In the sandbox, Composer couldn't reach
-  Packagist, so those packages (and their transitive dependencies) were
-  resolved as Git VCS sources instead — `composer.lock` reflects that, but
-  it's a completely ordinary lock file and `composer install` works the
-  standard way on a machine with normal registry access.
-- **Frontend:** the sandbox also couldn't reach the npm registry, so real
-  `vite` and `@vitejs/plugin-react` couldn't be installed. `package.json`
-  declares them normally, and on any machine with npm access `npm install`
-  will resolve the genuine packages with no code changes needed. Since
-  `node_modules/` isn't committed, this doesn't affect anyone cloning the
-  repo.
