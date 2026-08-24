@@ -1,0 +1,20 @@
+# Backend (PHP / Composer)
+backend/vendor/
+backend/.env
+backend/*.sqlite
+backend/*.sqlite-journal
+backend/database/*.sqlite
+backend/composer.lock.bak
+
+# Frontend (Node / Vite)
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+
+# General
+.DS_Store
+*.log
+.idea/
+.vscode/
+*.swp
