@@ -5,6 +5,8 @@ backend/*.sqlite
 backend/*.sqlite-journal
 backend/database/*.sqlite
 backend/composer.lock.bak
+backend/.phpunit.cache/
+backend/.phpunit.result.cache
 
 # Frontend (Node / Vite)
 frontend/node_modules/
