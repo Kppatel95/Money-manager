@@ -10,13 +10,16 @@ use App\Controllers\AccountController;
 use App\Controllers\AuthController;
 use App\Controllers\CategoryController;
 use App\Controllers\ExpenseController;
+use App\Controllers\TransactionController;
 use App\Repositories\AccountRepository;
 use App\Repositories\CategoryRepository;
 use App\Repositories\ExpenseRepository;
+use App\Repositories\TransactionRepository;
 use App\Repositories\UserRepository;
 use App\Router;
 use App\Services\AccountService;
 use App\Services\CategoryService;
+use App\Services\TransactionService;
 use App\Support\Logger;
 use App\Support\Request;
 use App\Support\Response;
@@ -77,10 +80,21 @@ final class Application
         $accounts = new AccountService(new AccountRepository($this->pdo));
         $categories = new CategoryService(new CategoryRepository($this->pdo));
 
+        $transactions = new TransactionService(
+            new TransactionRepository($this->pdo),
+            $accounts,
+            $categories
+        );
+
         $accountController = new AccountController($accounts);
         $categoryController = new CategoryController($categories);
+        $transactionController = new TransactionController($transactions);
 
-        $this->router->group('/api/v1', function (Router $r) use ($accountController, $categoryController): void {
+        $this->router->group('/api/v1', function (Router $r) use (
+            $accountController,
+            $categoryController,
+            $transactionController
+        ): void {
             $r->get('/accounts', $this->authed([$accountController, 'index']));
             $r->post('/accounts', $this->authed([$accountController, 'store']));
             $r->get('/accounts/{id}', $this->authed([$accountController, 'show']));
@@ -92,6 +106,12 @@ final class Application
             $r->post('/categories', $this->authed([$categoryController, 'store']));
             $r->put('/categories/{id}', $this->authed([$categoryController, 'update']));
             $r->delete('/categories/{id}', $this->authed([$categoryController, 'destroy']));
+
+            $r->get('/transactions', $this->authed([$transactionController, 'index']));
+            $r->post('/transactions', $this->authed([$transactionController, 'store']));
+            $r->get('/transactions/{id}', $this->authed([$transactionController, 'show']));
+            $r->put('/transactions/{id}', $this->authed([$transactionController, 'update']));
+            $r->delete('/transactions/{id}', $this->authed([$transactionController, 'destroy']));
         });
 
         $this->registerLegacyRoutes($users, $jwt);
