@@ -4,67 +4,53 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
-use App\Auth\JwtService;
-use App\Exceptions\ConflictException;
 use App\Exceptions\UnauthorizedException;
 use App\Repositories\UserRepository;
+use App\Services\AuthService;
 use App\Support\Request;
 use App\Support\Response;
-use App\Validation\AuthValidator;
 
-/**
- * v1 (legacy) auth endpoints: a single long-lived JWT, no refresh tokens.
- * Superseded by /api/v1/auth; kept mounted until the frontend moves over.
- */
-final class AuthController
+final class AuthController extends Controller
 {
     public function __construct(
-        private readonly UserRepository $users,
-        private readonly JwtService $jwt
+        private readonly AuthService $auth,
+        private readonly UserRepository $users
     ) {
     }
 
     public function register(Request $request): Response
     {
-        $data = AuthValidator::validateRegistration($request->all());
-
-        if ($this->users->findByEmail($data['email']) !== null) {
-            throw new ConflictException('An account with that email already exists.');
-        }
-
-        $user = $this->users->create(
-            $data['name'],
-            $data['email'],
-            password_hash($data['password'], PASSWORD_BCRYPT)
-        );
-
-        return Response::json([
-            'token' => $this->jwt->issue((int) $user['id'], $user['email']),
-            'user' => $this->publicUser($user),
-        ], 201);
+        return Response::created($this->auth->register($request->all()));
     }
 
     public function login(Request $request): Response
     {
-        $data = AuthValidator::validateLogin($request->all());
-        $user = $this->users->findByEmail($data['email']);
-
-        if ($user === null || !password_verify($data['password'], $user['password_hash'])) {
-            throw new UnauthorizedException('Invalid email or password.');
-        }
-
-        return Response::json([
-            'token' => $this->jwt->issue((int) $user['id'], $user['email']),
-            'user' => $this->publicUser($user),
-        ]);
+        return Response::data($this->auth->login($request->all(), $request->clientIp()));
     }
 
-    private function publicUser(array $user): array
+    public function refresh(Request $request): Response
     {
-        return [
-            'id' => (int) $user['id'],
-            'name' => $user['name'],
-            'email' => $user['email'],
-        ];
+        $token = $request->input('refresh_token');
+
+        return Response::data($this->auth->refresh(is_string($token) ? $token : null));
+    }
+
+    public function logout(Request $request, int $userId): Response
+    {
+        $token = $request->input('refresh_token');
+        $this->auth->logout($userId, is_string($token) ? $token : null);
+
+        return Response::noContent();
+    }
+
+    public function me(Request $request, int $userId): Response
+    {
+        $user = $this->users->findById($userId);
+
+        if ($user === null) {
+            throw new UnauthorizedException('Invalid or expired access token.');
+        }
+
+        return Response::data($this->auth->publicUser($user));
     }
 }

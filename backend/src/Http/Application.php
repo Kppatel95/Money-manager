@@ -17,11 +17,14 @@ use App\Repositories\AccountRepository;
 use App\Repositories\BudgetRepository;
 use App\Repositories\CategoryRepository;
 use App\Repositories\ExpenseRepository;
+use App\Repositories\LoginAttemptRepository;
 use App\Repositories\RecurringTransactionRepository;
+use App\Repositories\RefreshTokenRepository;
 use App\Repositories\TransactionRepository;
 use App\Repositories\UserRepository;
 use App\Router;
 use App\Services\AccountService;
+use App\Services\AuthService;
 use App\Services\BudgetService;
 use App\Services\CategoryService;
 use App\Services\RecurringTransactionService;
@@ -88,6 +91,14 @@ final class Application
         $jwt = new JwtService();
         $this->authenticate = new Authenticate($jwt, $users);
 
+        $auth = new AuthService(
+            $users,
+            new RefreshTokenRepository($this->pdo),
+            new LoginAttemptRepository($this->pdo),
+            $jwt,
+            $this->logger
+        );
+
         $accounts = new AccountService(new AccountRepository($this->pdo));
         $categories = new CategoryService(new CategoryRepository($this->pdo));
 
@@ -107,14 +118,22 @@ final class Application
         $transactionController = new TransactionController($transactions);
         $budgetController = new BudgetController($budgets);
         $recurringController = new RecurringTransactionController($this->recurring);
+        $authController = new AuthController($auth, $users);
 
         $this->router->group('/api/v1', function (Router $r) use (
             $accountController,
             $categoryController,
             $transactionController,
             $budgetController,
-            $recurringController
+            $recurringController,
+            $authController
         ): void {
+            $r->post('/auth/register', fn (Request $q) => $authController->register($q));
+            $r->post('/auth/login', fn (Request $q) => $authController->login($q));
+            $r->post('/auth/refresh', fn (Request $q) => $authController->refresh($q));
+            $r->post('/auth/logout', $this->authed([$authController, 'logout']));
+            $r->get('/auth/me', $this->authed([$authController, 'me']));
+
             $r->get('/accounts', $this->authed([$accountController, 'index']));
             $r->post('/accounts', $this->authed([$accountController, 'store']));
             $r->get('/accounts/{id}', $this->authed([$accountController, 'show']));
@@ -144,7 +163,7 @@ final class Application
             $r->delete('/recurring-transactions/{id}', $this->authed([$recurringController, 'destroy']));
         });
 
-        $this->registerLegacyRoutes($users, $jwt);
+        $this->registerLegacyRoutes();
     }
 
     /**
@@ -196,16 +215,12 @@ final class Application
      * The original single-table expense API. Still mounted under /api so the
      * existing frontend keeps working while /api/v1 is built out.
      */
-    private function registerLegacyRoutes(UserRepository $users, JwtService $jwt): void
+    private function registerLegacyRoutes(): void
     {
         $auth = $this->authenticate;
-        $authController = new AuthController($users, $jwt);
         $expenses = new ExpenseController(new ExpenseRepository($this->pdo));
 
-        $this->router->group('/api', function (Router $r) use ($authController, $expenses, $auth): void {
-            $r->post('/register', fn (Request $q) => $authController->register($q));
-            $r->post('/login', fn (Request $q) => $authController->login($q));
-
+        $this->router->group('/api', function (Router $r) use ($expenses, $auth): void {
             $r->get('/expenses', fn (Request $q) => $expenses->index($q, $auth->handle($q)));
             $r->post('/expenses', fn (Request $q) => $expenses->store($q, $auth->handle($q)));
             $r->put('/expenses/{id}', fn (Request $q, array $p) => $expenses->update($q, $auth->handle($q), $p['id']));

@@ -12,43 +12,54 @@ use Firebase\JWT\SignatureInvalidException;
 use UnexpectedValueException;
 
 /**
- * Issues and verifies the JWTs used to authenticate API requests.
+ * Issues and verifies the short-lived access tokens used on every request.
+ *
+ * 15 minutes is deliberate: a stateless JWT cannot be revoked, so the way to
+ * limit the damage of a leaked one is to make it expire quickly and put the
+ * long-lived, revocable half of the pair in the refresh token instead.
  */
 final class JwtService
 {
     private const ALGO = 'HS256';
-    private const TTL_SECONDS = 60 * 60 * 24; // 24 hours
+    public const DEFAULT_TTL = 900; // 15 minutes
 
     private string $secret;
 
-    public function __construct(?string $secret = null)
+    private int $ttl;
+
+    public function __construct(?string $secret = null, ?int $ttl = null)
     {
         $this->secret = $secret ?? Env::get('JWT_SECRET', 'dev-insecure-secret-change-me');
+        $this->ttl = $ttl ?? (int) (Env::get('JWT_TTL', (string) self::DEFAULT_TTL));
+    }
+
+    public function ttl(): int
+    {
+        return $this->ttl;
     }
 
     public function issue(int $userId, string $email): string
     {
         $now = time();
 
-        $payload = [
+        return JWT::encode([
             'sub' => $userId,
             'email' => $email,
             'iat' => $now,
-            'exp' => $now + self::TTL_SECONDS,
-        ];
-
-        return JWT::encode($payload, $this->secret, self::ALGO);
+            'exp' => $now + $this->ttl,
+        ], $this->secret, self::ALGO);
     }
 
     /**
-     * Returns the decoded payload as an array, or null if the token is
-     * missing, malformed, expired, or has a bad signature.
+     * Returns the decoded payload, or null if the token is malformed, expired
+     * or signed with the wrong key.
+     *
+     * @return array<string, mixed>|null
      */
     public function verify(string $token): ?array
     {
         try {
-            $decoded = JWT::decode($token, new Key($this->secret, self::ALGO));
-            return (array) $decoded;
+            return (array) JWT::decode($token, new Key($this->secret, self::ALGO));
         } catch (ExpiredException|SignatureInvalidException|UnexpectedValueException) {
             return null;
         }
