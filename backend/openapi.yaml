@@ -1,0 +1,950 @@
+openapi: 3.0.3
+info:
+  title: Personal Finance API
+  version: "2.0.0"
+  description: |
+    A multi-account personal finance API: accounts, a categorised transaction
+    ledger with transfers, monthly budgets, recurring schedules and dashboard
+    aggregation.
+
+    ## Money
+    Every monetary value is exchanged twice: `*_cents` is an integer number of
+    cents and is the source of truth, and the matching field without the
+    suffix is the same value in major units for display. Requests accept major
+    units (`"12.34"`, `12.34` or `12`); anything a client computes should be
+    computed from the `_cents` field.
+
+    ## Envelopes
+    Successful responses wrap their payload in `data`, with list endpoints
+    adding a `meta` object. Errors always look like:
+
+    ```json
+    {"error": {"code": "VALIDATION_ERROR", "message": "...", "details": {"amount": "Amount must be a number."}}}
+    ```
+
+    ## Auth
+    `POST /auth/login` returns a 15-minute access token (JWT) and a 7-day
+    refresh token. Send the access token as `Authorization: Bearer <token>`.
+    When it expires, POST the refresh token to `/auth/refresh`, which revokes
+    it and returns a new pair.
+  license:
+    name: MIT
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local development server
+
+tags:
+  - name: Auth
+  - name: Accounts
+  - name: Categories
+  - name: Transactions
+  - name: Budgets
+  - name: Recurring
+  - name: Dashboard
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Create an account and start a session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string, maxLength: 80, example: Ada Lovelace }
+                email: { type: string, format: email, example: ada@example.com }
+                password: { type: string, minLength: 8, format: password }
+      responses:
+        "201":
+          description: Registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Session" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Exchange credentials for a token pair
+      description: |
+        Five failed attempts for one email inside 15 minutes lock that email
+        out; further attempts return 429 with a `Retry-After` header until the
+        window passes. A successful login clears the counter.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: Signed in
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Session" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate a refresh token for a new pair
+      description: The presented refresh token is revoked and replaced.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200":
+          description: New token pair
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Session" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke a refresh token
+      description: |
+        Revokes the supplied refresh token, or every refresh token for the
+        caller when the body is empty. The access token is stateless and keeps
+        working until it expires (at most 15 minutes).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "204": { description: Logged out }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: The signed-in user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /accounts:
+    get:
+      tags: [Accounts]
+      summary: List accounts with their current balances
+      parameters:
+        - name: include_archived
+          in: query
+          schema: { type: string, enum: ["true", "1"] }
+          description: Include archived accounts, which are hidden by default.
+      responses:
+        "200":
+          description: Accounts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Account" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Accounts]
+      summary: Create an account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AccountInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Account" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /accounts/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Accounts]
+      summary: Fetch one account
+      responses:
+        "200":
+          description: Account
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Account" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Accounts]
+      summary: Update an account
+      description: Send any subset of the fields.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/AccountInput"
+                - type: object
+                  properties:
+                    archived: { type: boolean }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Account" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    delete:
+      tags: [Accounts]
+      summary: Delete or archive an account
+      description: |
+        An account with no transactions is deleted. One that carries history is
+        archived instead, because deleting it would silently rewrite past
+        balances. The response says which happened.
+      responses:
+        "200":
+          description: Deleted or archived
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: { type: integer }
+                      action: { type: string, enum: [deleted, archived] }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /accounts/{id}/balance:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Accounts]
+      summary: Balance breakdown for one account
+      responses:
+        "200":
+          description: Balance
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/AccountBalance" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /categories:
+    get:
+      tags: [Categories]
+      summary: List categories visible to the caller
+      description: "System defaults (is_system true) plus the caller's own."
+      parameters:
+        - name: type
+          in: query
+          schema: { type: string, enum: [income, expense] }
+      responses:
+        "200":
+          description: Categories
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Category" }
+    post:
+      tags: [Categories]
+      summary: Create a category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoryInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Category" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /categories/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Categories]
+      summary: Update a user-owned category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoryInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Category" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [Categories]
+      summary: Delete a user-owned category
+      description: System categories are shared and cannot be deleted (403).
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /transactions:
+    get:
+      tags: [Transactions]
+      summary: List transactions
+      parameters:
+        - { name: account_id, in: query, schema: { type: integer }, description: "Matches both sides of a transfer." }
+        - { name: category_id, in: query, schema: { type: integer } }
+        - { name: type, in: query, schema: { type: string, enum: [income, expense, transfer] } }
+        - { name: date_from, in: query, schema: { type: string, format: date } }
+        - { name: date_to, in: query, schema: { type: string, format: date } }
+        - { name: search, in: query, schema: { type: string }, description: "Substring match on description and notes." }
+        - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, default: 25, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of transactions, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Transaction" }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    post:
+      tags: [Transactions]
+      summary: Record a transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TransactionInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Transaction" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /transactions/export:
+    get:
+      tags: [Transactions]
+      summary: Export the filtered set as CSV
+      description: |
+        Accepts the same filters as the list endpoint and ignores pagination:
+        every matching row is exported. The response is a UTF-8 CSV
+        attachment, so a browser download needs a fetch with the
+        Authorization header rather than a plain link.
+      parameters:
+        - { name: account_id, in: query, schema: { type: integer } }
+        - { name: category_id, in: query, schema: { type: integer } }
+        - { name: type, in: query, schema: { type: string, enum: [income, expense, transfer] } }
+        - { name: date_from, in: query, schema: { type: string, format: date } }
+        - { name: date_to, in: query, schema: { type: string, format: date } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: CSV document
+          content:
+            text/csv:
+              schema: { type: string }
+
+  /transactions/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [Transactions]
+      summary: Fetch one transaction
+      responses:
+        "200":
+          description: Transaction
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Transaction" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Transactions]
+      summary: Update a transaction
+      description: |
+        Send any subset of the fields; they are merged onto the stored row and
+        the result is validated as a whole. Changing `type` to `transfer`
+        clears the category unless a new one is sent in the same request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TransactionInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Transaction" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    delete:
+      tags: [Transactions]
+      summary: Delete a transaction
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /budgets:
+    get:
+      tags: [Budgets]
+      summary: Budgets for a month, with spend computed from the ledger
+      parameters:
+        - name: month
+          in: query
+          schema: { type: string, pattern: '^\d{4}-\d{2}$' }
+          description: Defaults to the current month.
+      responses:
+        "200":
+          description: Budgets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Budget" }
+                  meta: { $ref: "#/components/schemas/BudgetMeta" }
+    post:
+      tags: [Budgets]
+      summary: Create a budget
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category_id, month, amount_limit]
+              properties:
+                category_id: { type: integer, description: "Must be an expense category." }
+                month: { type: string, example: "2026-05" }
+                amount_limit: { type: string, example: "400.00" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Budget" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /budgets/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Budgets]
+      summary: Update a budget
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                category_id: { type: integer }
+                month: { type: string }
+                amount_limit: { type: string }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Budget" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [Budgets]
+      summary: Delete a budget
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /recurring-transactions:
+    get:
+      tags: [Recurring]
+      summary: List recurring schedules
+      responses:
+        "200":
+          description: Schedules
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/RecurringTransaction" }
+    post:
+      tags: [Recurring]
+      summary: Create a recurring schedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecurringTransactionInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/RecurringTransaction" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /recurring-transactions/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [Recurring]
+      summary: Update a schedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecurringTransactionInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/RecurringTransaction" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    delete:
+      tags: [Recurring]
+      summary: Delete a schedule
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /dashboard/summary:
+    get:
+      tags: [Dashboard]
+      summary: Everything the home screen needs in one call
+      parameters:
+        - name: month
+          in: query
+          schema: { type: string, pattern: '^\d{4}-\d{2}$' }
+          description: Defaults to the current month.
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/DashboardSummary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+
+  responses:
+    Unauthorized:
+      description: Missing, malformed or expired access token
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Visible but not modifiable
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: No such resource for this user
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: Collides with existing data
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationError:
+      description: One or more fields are invalid; `details` maps field to message
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: Too many failed attempts
+      headers:
+        Retry-After:
+          schema: { type: integer }
+          description: Seconds to wait before trying again.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              enum: [BAD_REQUEST, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, METHOD_NOT_ALLOWED, CONFLICT, VALIDATION_ERROR, RATE_LIMITED, INTERNAL_ERROR]
+            message: { type: string }
+            details:
+              type: object
+              additionalProperties: true
+
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string, format: email }
+        created_at: { type: string }
+
+    Session:
+      type: object
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        access_token: { type: string, description: "JWT, send as Authorization: Bearer <token>" }
+        refresh_token: { type: string, description: "Opaque; rotated on every refresh." }
+        token_type: { type: string, example: Bearer }
+        expires_in: { type: integer, example: 900, description: "Access-token lifetime in seconds." }
+
+    AccountInput:
+      type: object
+      required: [name, type]
+      properties:
+        name: { type: string, maxLength: 80 }
+        type: { type: string, enum: [cash, bank, card, wallet, savings] }
+        initial_balance: { type: string, example: "1250.75", description: "Major units; may be negative." }
+        currency: { type: string, example: USD, description: "Three-letter label; no conversion is performed." }
+
+    Account:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        type: { type: string, enum: [cash, bank, card, wallet, savings] }
+        currency: { type: string }
+        initial_balance_cents: { type: integer }
+        initial_balance: { type: number }
+        balance_cents: { type: integer, description: "Derived: initial balance plus every transaction." }
+        balance: { type: number }
+        archived: { type: boolean }
+        created_at: { type: string }
+
+    AccountBalance:
+      type: object
+      properties:
+        account_id: { type: integer }
+        name: { type: string }
+        currency: { type: string }
+        initial_balance_cents: { type: integer }
+        income_cents: { type: integer }
+        expense_cents: { type: integer }
+        transfer_in_cents: { type: integer }
+        transfer_out_cents: { type: integer }
+        balance_cents: { type: integer }
+        balance: { type: number }
+
+    CategoryInput:
+      type: object
+      required: [name, type]
+      properties:
+        name: { type: string, maxLength: 60 }
+        type: { type: string, enum: [income, expense] }
+        icon: { type: string, maxLength: 8, description: "Short label or emoji." }
+        color: { type: string, example: "#3366ff" }
+
+    Category:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        type: { type: string, enum: [income, expense] }
+        icon: { type: string }
+        color: { type: string }
+        is_system: { type: boolean, description: "System categories are shared and read-only." }
+        created_at: { type: string, nullable: true }
+
+    TransactionInput:
+      type: object
+      required: [type, account_id, amount, transaction_date]
+      properties:
+        type: { type: string, enum: [income, expense, transfer] }
+        account_id: { type: integer, description: "The account the money leaves or enters." }
+        category_id: { type: integer, nullable: true, description: "Required for income and expense; must be null for transfers." }
+        transfer_to_account_id: { type: integer, nullable: true, description: "Required for transfers only." }
+        amount: { type: string, example: "42.55", description: "Major units, always positive." }
+        description: { type: string, maxLength: 255 }
+        notes: { type: string, nullable: true, maxLength: 2000 }
+        tags:
+          oneOf:
+            - type: array
+              items: { type: string }
+            - type: string
+              description: "Comma-separated is also accepted."
+        transaction_date: { type: string, format: date }
+
+    Transaction:
+      type: object
+      properties:
+        id: { type: integer }
+        type: { type: string, enum: [income, expense, transfer] }
+        amount_cents: { type: integer }
+        amount: { type: number }
+        account_id: { type: integer }
+        account_name: { type: string }
+        transfer_to_account_id: { type: integer, nullable: true }
+        transfer_to_account_name: { type: string, nullable: true }
+        category_id: { type: integer, nullable: true }
+        category_name: { type: string, nullable: true }
+        category_icon: { type: string, nullable: true }
+        category_color: { type: string, nullable: true }
+        description: { type: string }
+        notes: { type: string, nullable: true }
+        tags:
+          type: array
+          items: { type: string }
+        transaction_date: { type: string, format: date }
+        created_at: { type: string }
+        updated_at: { type: string }
+
+    PageMeta:
+      type: object
+      properties:
+        page: { type: integer }
+        per_page: { type: integer }
+        total: { type: integer }
+        total_pages: { type: integer }
+        filters:
+          type: object
+          description: The filters that were actually applied.
+          additionalProperties: true
+
+    Budget:
+      type: object
+      properties:
+        id: { type: integer }
+        category_id: { type: integer }
+        category_name: { type: string }
+        category_icon: { type: string, nullable: true }
+        category_color: { type: string, nullable: true }
+        month: { type: string, example: "2026-05" }
+        amount_limit_cents: { type: integer }
+        amount_limit: { type: number }
+        spent_cents: { type: integer, description: "Summed from the ledger at request time." }
+        spent: { type: number }
+        remaining_cents: { type: integer, description: "Negative when overspent." }
+        remaining: { type: number }
+        percent_used: { type: number }
+        over_budget: { type: boolean }
+        created_at: { type: string, nullable: true }
+
+    BudgetMeta:
+      type: object
+      properties:
+        month: { type: string }
+        total_limit_cents: { type: integer }
+        total_limit: { type: number }
+        total_spent_cents: { type: integer }
+        total_spent: { type: number }
+        total_remaining_cents: { type: integer }
+        total_remaining: { type: number }
+
+    RecurringTransactionInput:
+      type: object
+      required: [type, account_id, category_id, amount, frequency, next_run_date]
+      properties:
+        type: { type: string, enum: [income, expense] }
+        account_id: { type: integer }
+        category_id: { type: integer }
+        amount: { type: string, example: "850.00" }
+        description: { type: string, maxLength: 255 }
+        frequency: { type: string, enum: [daily, weekly, monthly] }
+        next_run_date: { type: string, format: date }
+        active: { type: boolean, default: true }
+
+    RecurringTransaction:
+      type: object
+      properties:
+        id: { type: integer }
+        type: { type: string, enum: [income, expense] }
+        amount_cents: { type: integer }
+        amount: { type: number }
+        account_id: { type: integer }
+        account_name: { type: string }
+        category_id: { type: integer, nullable: true }
+        category_name: { type: string, nullable: true }
+        category_icon: { type: string, nullable: true }
+        category_color: { type: string, nullable: true }
+        description: { type: string }
+        frequency: { type: string, enum: [daily, weekly, monthly] }
+        next_run_date: { type: string, format: date }
+        active: { type: boolean }
+        created_at: { type: string }
+
+    DashboardSummary:
+      type: object
+      properties:
+        month: { type: string, example: "2026-05" }
+        net_worth_cents: { type: integer, description: "Sum of active account balances." }
+        net_worth: { type: number }
+        accounts:
+          type: array
+          items: { $ref: "#/components/schemas/Account" }
+        totals:
+          type: object
+          properties:
+            income_cents: { type: integer }
+            income: { type: number }
+            expense_cents: { type: integer }
+            expense: { type: number }
+            net_cents: { type: integer }
+            net: { type: number }
+            savings_rate: { type: number, description: "Net as a percentage of income." }
+        category_breakdown:
+          type: array
+          description: Expense totals per category for the month, largest first.
+          items:
+            type: object
+            properties:
+              category_id: { type: integer, nullable: true }
+              name: { type: string }
+              icon: { type: string, nullable: true }
+              color: { type: string, nullable: true }
+              total_cents: { type: integer }
+              total: { type: number }
+              transaction_count: { type: integer }
+              percent: { type: number }
+        trend:
+          type: array
+          description: Six months ending with the requested one, oldest first.
+          items:
+            type: object
+            properties:
+              month: { type: string }
+              income_cents: { type: integer }
+              income: { type: number }
+              expense_cents: { type: integer }
+              expense: { type: number }
+              net_cents: { type: integer }
+              net: { type: number }
+        budgets:
+          type: array
+          items: { $ref: "#/components/schemas/Budget" }

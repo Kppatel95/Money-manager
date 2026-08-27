@@ -1,0 +1,20 @@
+services:
+  api:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Override this. The application falls back to a well-known default
+      # secret, which is fine for a local demo and nowhere else.
+      JWT_SECRET: ${JWT_SECRET:-change-this-to-a-long-random-string}
+      APP_DEBUG: ${APP_DEBUG:-false}
+      DB_PATH: /data/finance.sqlite
+      LOG_PATH: /data/logs/app.log
+    volumes:
+      # SQLite file and logs survive `docker compose down`; only `down -v`
+      # throws the data away.
+      - finance-data:/data
+    restart: unless-stopped
+
+volumes:
+  finance-data:
