@@ -12,7 +12,10 @@ React/TypeScript frontend.
   repositories) behind a small front-controller router, JWT access tokens with
   rotating refresh tokens, and SQLite via PDO so there is no database server to
   stand up. Schema changes are numbered migration files.
-- **Frontend:** React + TypeScript, built with Vite.
+- **Frontend:** React 19 + TypeScript on Vite. Client-side routing, a typed
+  fetch layer that refreshes expired access tokens transparently, Recharts for
+  the dashboard charts, React Hook Form + Zod for the forms, and hand-written
+  CSS driven by custom properties for the light/dark themes.
 - **Tests:** PHPUnit -- unit tests for the pure logic (money parsing,
   validation, recurrence dates, error mapping) and integration tests that run
   the real router and real SQL against a throwaway database per test.
@@ -66,6 +69,16 @@ backend/    PHP API
   tests/                PHPUnit unit + integration suites
   openapi.yaml          API specification
 frontend/   React + TypeScript app (Vite)
+  src/
+    api/                typed client, token store, one function per endpoint
+    components/         layout shell, charts, reusable UI primitives
+    context/            auth, theme, toasts, shared reference data
+    forms/              account / transaction / budget / recurring forms
+    hooks/              async loading, debounce
+    lib/                money, dates, Zod schemas, form helpers
+    pages/              one file per route
+    styles/             tokens -> base -> layout -> components -> pages
+    types.ts            every API request/response shape
 ```
 
 ## Architecture
@@ -215,6 +228,79 @@ rotated on every use. Logging out revokes the refresh token; the access token
 keeps working until it expires, which is the standard tradeoff for stateless
 tokens and the reason theirs is short.
 
+## The frontend
+
+A multi-page React app built against the API above. Seven signed-in routes plus
+login and registration:
+
+| Route | What it does |
+|-------|--------------|
+| `/` | Dashboard: net worth, the month's income/expense/net/savings rate, a category donut, a six-month income-vs-expense chart, budget progress and account balances |
+| `/accounts` | Account cards with derived balances, opening balance and movement; add, edit, archive |
+| `/transactions` | Filterable, searchable, paginated ledger; income/expense/transfer form; CSV export of the current filter set |
+| `/budgets` | Per-month view with limit, spend, remainder and a progress bar per category; add, edit, delete |
+| `/recurring` | Schedules with frequency, next run and a pause/resume toggle |
+| `/reports` | Monthly totals, the trend chart, a ranked category table and a CSV export with its own range and filters |
+| `/settings` | The signed-in user from `/auth/me`, theme preference, workspace counts, sign out |
+
+Throughout: loading skeletons, empty states with a call to action, toast
+notifications, confirmation before anything destructive, and a sidebar that
+collapses into a drawer below 900px.
+
+### Notable pieces
+
+**The API client refreshes tokens by itself.** `src/api/client.ts` is the only
+place that talks to `fetch`. On a 401 it posts the refresh token to
+`/auth/refresh`, replays the original request with the new access token, and
+only gives up — clearing the session and dropping the user at the login screen —
+if the refresh itself fails. Concurrent 401s share a single in-flight refresh:
+because the API rotates the refresh token on every use, five parallel refreshes
+would spend the token once and get 401s for the other four, ending a perfectly
+healthy session. `src/api/resources.ts` sits on top with one function per
+endpoint, so no component builds a URL or unwraps a `data` envelope.
+
+**Money never becomes a float.** Every display path starts from the API's
+integer `*_cents` field and divides once, at formatting time; writes send
+major-unit strings back. `src/lib/money.ts` is the only file that does either.
+
+**Filters live in the URL.** The transactions page keeps its account, category,
+type, date-range, search and page state in the query string, so a filtered view
+is linkable and the back button behaves.
+
+**The chart palette was validated, not chosen by eye.** Series colours are a
+fixed categorical ramp (`--chart-1` … `--chart-7`) in an order where every
+adjacent pair stays separable under deuteranopia, protanopia and tritanopia, in
+both themes; a longer tail folds into a neutral "Other" rather than inventing a
+hue. Income and expense are the first two slots rather than green and red — the
+finance cliché is also the worst pair for the most common colour vision
+deficiency. Every chart carries a legend and written values, so nothing is
+encoded by colour alone.
+
+**Themes are CSS custom properties.** `styles/tokens.css` holds every colour,
+radius and spacing step; the dark theme redefines about twenty of them and no
+other stylesheet contains a literal colour. A tiny inline script in
+`index.html` applies the stored preference before React mounts, so a reload does
+not flash light-on-dark.
+
+### Dependencies, and why
+
+- **`react-router-dom`** — the app is genuinely multi-page: deep links, guarded
+  routes, and filter state in the query string. Hand-rolling that is a worse
+  version of a solved problem.
+- **`recharts`** — real SVG charts with axes, tooltips and legends. Composable
+  React components rather than an imperative charting API, which suits a donut
+  and a grouped bar chart driven by the same theme tokens.
+- **`react-hook-form`** + **`zod`** (+ **`@hookform/resolvers`**) — the
+  transaction form changes its own shape: a transfer needs a destination account
+  and must carry no category, while income and expense need the opposite. That
+  is a cross-field rule, and it belongs in a schema (`lib/schemas.ts`) rather
+  than scattered through JSX. Zod also gives the form value types for free via
+  `z.infer`, and uncontrolled inputs mean typing in one field does not re-render
+  the whole form.
+
+There is no CSS framework and no component library. The styling is a few hundred
+lines of plain CSS organised as tokens -> base -> layout -> components -> pages.
+
 ## Running the frontend
 
 Requires Node 18+.
@@ -226,8 +312,13 @@ cp .env.example .env    # set VITE_API_URL if the backend isn't on :8000
 npm run dev
 ```
 
-`npm run build` produces a production bundle in `frontend/dist/`;
-`npm run preview` serves that bundle locally.
+The dev server comes up on `http://localhost:5173` and expects the API on
+`http://localhost:8000` unless `VITE_API_URL` says otherwise. Register a user
+from the sign-up screen; the backend seeds a shared set of categories, so the
+only thing to do first is add an account.
 
-The frontend is being rebuilt against the v2 API described above; the version
-in this repository still targets the older single-table endpoints.
+```bash
+npm run typecheck   # tsc --noEmit across the project references
+npm run build       # production bundle in frontend/dist/
+npm run preview     # serve that bundle locally
+```
