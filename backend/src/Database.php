@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App;
 
+use App\Migration\Migrator;
 use App\Support\Env;
 use PDO;
 
@@ -19,33 +20,34 @@ final class Database
     public static function connection(): PDO
     {
         if (self::$connection === null) {
-            $path = Env::get('DB_PATH', dirname(__DIR__) . '/database/expenses.sqlite');
+            $path = Env::get('DB_PATH', dirname(__DIR__) . '/database/finance.sqlite');
             self::$connection = self::connect($path);
         }
 
         return self::$connection;
     }
 
-    public static function connect(string $path): PDO
+    /**
+     * Opens (and, unless told otherwise, migrates) a SQLite database.
+     *
+     * Migrations run on every boot: the ledger check is a single indexed read
+     * when there is nothing to do, and it means a freshly cloned checkout or a
+     * database left behind by an older release is always usable. Deployments
+     * that would rather gate this explicitly can run `php bin/migrate.php`
+     * and pass $migrate = false here.
+     */
+    public static function connect(string $path, bool $migrate = true): PDO
     {
-        $isNew = $path !== ':memory:' && !is_file($path);
-
         $pdo = new PDO('sqlite:' . $path);
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
         $pdo->exec('PRAGMA foreign_keys = ON');
 
-        if ($isNew || $path === ':memory:') {
-            self::migrate($pdo);
+        if ($migrate) {
+            (new Migrator($pdo, Migrator::defaultPath()))->migrate();
         }
 
         return $pdo;
-    }
-
-    public static function migrate(PDO $pdo): void
-    {
-        $schema = file_get_contents(dirname(__DIR__) . '/database/schema.sql');
-        $pdo->exec($schema);
     }
 
     /** Used only by tests to reset the singleton between cases if ever needed. */

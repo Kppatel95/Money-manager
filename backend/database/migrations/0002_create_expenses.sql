@@ -1,13 +1,7 @@
--- Expense Tracker schema (SQLite)
-
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
+-- Legacy single-table expense log (v1 of this API).
+-- Kept here so existing databases and the migration ledger line up; it is
+-- dropped again by a later migration once the richer transaction model
+-- replaces it.
 CREATE TABLE IF NOT EXISTS expenses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
