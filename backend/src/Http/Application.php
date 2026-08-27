@@ -8,16 +8,19 @@ use App\Auth\Authenticate;
 use App\Auth\JwtService;
 use App\Controllers\AccountController;
 use App\Controllers\AuthController;
+use App\Controllers\BudgetController;
 use App\Controllers\CategoryController;
 use App\Controllers\ExpenseController;
 use App\Controllers\TransactionController;
 use App\Repositories\AccountRepository;
+use App\Repositories\BudgetRepository;
 use App\Repositories\CategoryRepository;
 use App\Repositories\ExpenseRepository;
 use App\Repositories\TransactionRepository;
 use App\Repositories\UserRepository;
 use App\Router;
 use App\Services\AccountService;
+use App\Services\BudgetService;
 use App\Services\CategoryService;
 use App\Services\TransactionService;
 use App\Support\Logger;
@@ -80,20 +83,20 @@ final class Application
         $accounts = new AccountService(new AccountRepository($this->pdo));
         $categories = new CategoryService(new CategoryRepository($this->pdo));
 
-        $transactions = new TransactionService(
-            new TransactionRepository($this->pdo),
-            $accounts,
-            $categories
-        );
+        $transactionRepository = new TransactionRepository($this->pdo);
+        $transactions = new TransactionService($transactionRepository, $accounts, $categories);
+        $budgets = new BudgetService(new BudgetRepository($this->pdo), $transactionRepository, $categories);
 
         $accountController = new AccountController($accounts);
         $categoryController = new CategoryController($categories);
         $transactionController = new TransactionController($transactions);
+        $budgetController = new BudgetController($budgets);
 
         $this->router->group('/api/v1', function (Router $r) use (
             $accountController,
             $categoryController,
-            $transactionController
+            $transactionController,
+            $budgetController
         ): void {
             $r->get('/accounts', $this->authed([$accountController, 'index']));
             $r->post('/accounts', $this->authed([$accountController, 'store']));
@@ -112,6 +115,11 @@ final class Application
             $r->get('/transactions/{id}', $this->authed([$transactionController, 'show']));
             $r->put('/transactions/{id}', $this->authed([$transactionController, 'update']));
             $r->delete('/transactions/{id}', $this->authed([$transactionController, 'destroy']));
+
+            $r->get('/budgets', $this->authed([$budgetController, 'index']));
+            $r->post('/budgets', $this->authed([$budgetController, 'store']));
+            $r->put('/budgets/{id}', $this->authed([$budgetController, 'update']));
+            $r->delete('/budgets/{id}', $this->authed([$budgetController, 'destroy']));
         });
 
         $this->registerLegacyRoutes($users, $jwt);
