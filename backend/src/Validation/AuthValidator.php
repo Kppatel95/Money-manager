@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Validation;
 
+use App\Exceptions\ValidationException;
+
 /**
  * Validates registration and login payloads.
  */

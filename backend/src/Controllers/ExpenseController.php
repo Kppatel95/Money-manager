@@ -4,19 +4,24 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Exceptions\NotFoundException;
+use App\Exceptions\ValidationException;
 use App\Repositories\ExpenseRepository;
 use App\Support\Request;
 use App\Support\Response;
 use App\Validation\ExpenseValidator;
-use App\Validation\ValidationException;
 
+/**
+ * v1 (legacy) single-table expense endpoints. Superseded by the account /
+ * transaction model under /api/v1; kept mounted until the frontend moves over.
+ */
 final class ExpenseController
 {
     public function __construct(private readonly ExpenseRepository $expenses)
     {
     }
 
-    public function index(Request $request, array $user): void
+    public function index(Request $request, array $user): Response
     {
         $filters = [
             'category' => $request->query('category'),
@@ -26,62 +31,53 @@ final class ExpenseController
 
         $expenses = $this->expenses->allForUser((int) $user['id'], $filters);
 
-        Response::json(['data' => array_map([$this, 'format'], $expenses)]);
+        return Response::json(['data' => array_map([$this, 'format'], $expenses)]);
     }
 
-    public function store(Request $request, array $user): void
+    public function store(Request $request, array $user): Response
     {
-        try {
-            $data = ExpenseValidator::validate($request->all());
-        } catch (ValidationException $e) {
-            Response::error('Validation failed.', 422, $e->errors());
-        }
-
+        $data = ExpenseValidator::validate($request->all());
         $expense = $this->expenses->create((int) $user['id'], $data);
 
-        Response::json(['data' => $this->format($expense)], 201);
+        return Response::json(['data' => $this->format($expense)], 201);
     }
 
-    public function update(Request $request, array $user, string $id): void
+    public function update(Request $request, array $user, string $id): Response
     {
         if (!ctype_digit($id)) {
-            Response::error('Expense not found.', 404);
+            throw new NotFoundException('Expense not found.');
         }
 
-        try {
-            $data = ExpenseValidator::validate($request->all(), partial: true);
-        } catch (ValidationException $e) {
-            Response::error('Validation failed.', 422, $e->errors());
-        }
+        $data = ExpenseValidator::validate($request->all(), partial: true);
 
         if ($data === []) {
-            Response::error('No valid fields provided to update.', 422);
+            throw new ValidationException([], 'No valid fields provided to update.');
         }
 
         $expense = $this->expenses->update((int) $id, (int) $user['id'], $data);
 
         if ($expense === null) {
-            Response::error('Expense not found.', 404);
+            throw new NotFoundException('Expense not found.');
         }
 
-        Response::json(['data' => $this->format($expense)]);
+        return Response::json(['data' => $this->format($expense)]);
     }
 
-    public function destroy(Request $request, array $user, string $id): void
+    public function destroy(Request $request, array $user, string $id): Response
     {
         if (!ctype_digit($id) || !$this->expenses->delete((int) $id, (int) $user['id'])) {
-            Response::error('Expense not found.', 404);
+            throw new NotFoundException('Expense not found.');
         }
 
-        Response::json(['message' => 'Expense deleted.']);
+        return Response::json(['message' => 'Expense deleted.']);
     }
 
-    public function summary(Request $request, array $user): void
+    public function summary(Request $request, array $user): Response
     {
         $summary = $this->expenses->summaryByCategory((int) $user['id']);
         $total = round(array_sum(array_column($summary, 'total')), 2);
 
-        Response::json(['data' => $summary, 'total' => $total]);
+        return Response::json(['data' => $summary, 'total' => $total]);
     }
 
     private function format(array $expense): array

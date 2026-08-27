@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Validation;
 
+use App\Exceptions\ValidationException;
+
 /**
  * Validates and normalizes expense input. Deliberately has zero knowledge
  * of HTTP or the database so it can be unit tested in isolation.

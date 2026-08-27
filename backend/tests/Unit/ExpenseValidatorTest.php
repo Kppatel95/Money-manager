@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use App\Validation\ExpenseValidator;
-use App\Validation\ValidationException;
+use App\Exceptions\ValidationException;
 use PHPUnit\Framework\TestCase;
 
 final class ExpenseValidatorTest extends TestCase

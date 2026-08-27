@@ -5,12 +5,17 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Auth\JwtService;
+use App\Exceptions\ConflictException;
+use App\Exceptions\UnauthorizedException;
 use App\Repositories\UserRepository;
 use App\Support\Request;
 use App\Support\Response;
 use App\Validation\AuthValidator;
-use App\Validation\ValidationException;
 
+/**
+ * v1 (legacy) auth endpoints: a single long-lived JWT, no refresh tokens.
+ * Superseded by /api/v1/auth; kept mounted until the frontend moves over.
+ */
 final class AuthController
 {
     public function __construct(
@@ -19,16 +24,12 @@ final class AuthController
     ) {
     }
 
-    public function register(Request $request): void
+    public function register(Request $request): Response
     {
-        try {
-            $data = AuthValidator::validateRegistration($request->all());
-        } catch (ValidationException $e) {
-            Response::error('Validation failed.', 422, $e->errors());
-        }
+        $data = AuthValidator::validateRegistration($request->all());
 
         if ($this->users->findByEmail($data['email']) !== null) {
-            Response::error('An account with that email already exists.', 409);
+            throw new ConflictException('An account with that email already exists.');
         }
 
         $user = $this->users->create(
@@ -37,32 +38,23 @@ final class AuthController
             password_hash($data['password'], PASSWORD_BCRYPT)
         );
 
-        $token = $this->jwt->issue((int) $user['id'], $user['email']);
-
-        Response::json([
-            'token' => $token,
+        return Response::json([
+            'token' => $this->jwt->issue((int) $user['id'], $user['email']),
             'user' => $this->publicUser($user),
         ], 201);
     }
 
-    public function login(Request $request): void
+    public function login(Request $request): Response
     {
-        try {
-            $data = AuthValidator::validateLogin($request->all());
-        } catch (ValidationException $e) {
-            Response::error('Validation failed.', 422, $e->errors());
-        }
-
+        $data = AuthValidator::validateLogin($request->all());
         $user = $this->users->findByEmail($data['email']);
 
         if ($user === null || !password_verify($data['password'], $user['password_hash'])) {
-            Response::error('Invalid email or password.', 401);
+            throw new UnauthorizedException('Invalid email or password.');
         }
 
-        $token = $this->jwt->issue((int) $user['id'], $user['email']);
-
-        Response::json([
-            'token' => $token,
+        return Response::json([
+            'token' => $this->jwt->issue((int) $user['id'], $user['email']),
             'user' => $this->publicUser($user),
         ]);
     }
