@@ -1,0 +1,11 @@
+# Keep the build context small and, more importantly, stop a local vendor/
+# directory from overwriting the one installed inside the image.
+vendor/
+.env
+*.sqlite
+*.sqlite-journal
+database/*.sqlite
+storage/
+.phpunit.cache/
+.phpunit.result.cache
+tests/
