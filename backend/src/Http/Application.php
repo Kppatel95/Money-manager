@@ -11,17 +11,20 @@ use App\Controllers\AuthController;
 use App\Controllers\BudgetController;
 use App\Controllers\CategoryController;
 use App\Controllers\ExpenseController;
+use App\Controllers\RecurringTransactionController;
 use App\Controllers\TransactionController;
 use App\Repositories\AccountRepository;
 use App\Repositories\BudgetRepository;
 use App\Repositories\CategoryRepository;
 use App\Repositories\ExpenseRepository;
+use App\Repositories\RecurringTransactionRepository;
 use App\Repositories\TransactionRepository;
 use App\Repositories\UserRepository;
 use App\Router;
 use App\Services\AccountService;
 use App\Services\BudgetService;
 use App\Services\CategoryService;
+use App\Services\RecurringTransactionService;
 use App\Services\TransactionService;
 use App\Support\Logger;
 use App\Support\Request;
@@ -43,6 +46,11 @@ final class Application
     private Router $router;
 
     private Authenticate $authenticate;
+
+    private RecurringTransactionService $recurring;
+
+    /** Recurring schedules are caught up once per request, not once per route. */
+    private bool $recurringChecked = false;
 
     private function __construct(
         private readonly PDO $pdo,
@@ -86,17 +94,26 @@ final class Application
         $transactionRepository = new TransactionRepository($this->pdo);
         $transactions = new TransactionService($transactionRepository, $accounts, $categories);
         $budgets = new BudgetService(new BudgetRepository($this->pdo), $transactionRepository, $categories);
+        $this->recurring = new RecurringTransactionService(
+            new RecurringTransactionRepository($this->pdo),
+            $transactionRepository,
+            $accounts,
+            $categories,
+            $this->logger
+        );
 
         $accountController = new AccountController($accounts);
         $categoryController = new CategoryController($categories);
         $transactionController = new TransactionController($transactions);
         $budgetController = new BudgetController($budgets);
+        $recurringController = new RecurringTransactionController($this->recurring);
 
         $this->router->group('/api/v1', function (Router $r) use (
             $accountController,
             $categoryController,
             $transactionController,
-            $budgetController
+            $budgetController,
+            $recurringController
         ): void {
             $r->get('/accounts', $this->authed([$accountController, 'index']));
             $r->post('/accounts', $this->authed([$accountController, 'store']));
@@ -120,6 +137,11 @@ final class Application
             $r->post('/budgets', $this->authed([$budgetController, 'store']));
             $r->put('/budgets/{id}', $this->authed([$budgetController, 'update']));
             $r->delete('/budgets/{id}', $this->authed([$budgetController, 'destroy']));
+
+            $r->get('/recurring-transactions', $this->authed([$recurringController, 'index']));
+            $r->post('/recurring-transactions', $this->authed([$recurringController, 'store']));
+            $r->put('/recurring-transactions/{id}', $this->authed([$recurringController, 'update']));
+            $r->delete('/recurring-transactions/{id}', $this->authed([$recurringController, 'destroy']));
         });
 
         $this->registerLegacyRoutes($users, $jwt);
@@ -133,9 +155,41 @@ final class Application
     {
         return function (Request $request, array $params = []) use ($handler): Response {
             $user = $this->authenticate->handle($request);
+            $userId = (int) $user['id'];
 
-            return $handler($request, (int) $user['id'], $params);
+            $this->catchUpRecurring($userId);
+
+            return $handler($request, $userId, $params);
         };
+    }
+
+    /**
+     * Materialises any due recurring transactions for this user.
+     *
+     * There is no cron in this deployment, so the work rides along with the
+     * first authenticated request of the request cycle. The cost is one
+     * indexed lookup that returns nothing in the overwhelming majority of
+     * requests; the payoff is that recurring entries appear without any
+     * scheduler to install, and a user who has not opened the app for a month
+     * still gets a correct ledger because runDue() catches up every missed
+     * occurrence. The obvious limitation: nothing happens while nobody logs
+     * in. If that ever matters, the same call belongs behind a real cron
+     * hitting `php bin/run-recurring.php`, and this hook can go away.
+     */
+    private function catchUpRecurring(int $userId): void
+    {
+        if ($this->recurringChecked) {
+            return;
+        }
+
+        $this->recurringChecked = true;
+
+        try {
+            $this->recurring->runDue($userId);
+        } catch (Throwable $e) {
+            // A broken schedule must not take down an unrelated request.
+            $this->logger->exception($e, false, ['hook' => 'recurring', 'user_id' => $userId]);
+        }
     }
 
     /**
