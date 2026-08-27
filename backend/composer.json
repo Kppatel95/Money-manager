@@ -1,6 +1,6 @@
 {
-    "name": "portfolio-dev/expense-tracker-api",
-    "description": "PHP backend API for the Expense Tracker portfolio app",
+    "name": "portfolio-dev/personal-finance-api",
+    "description": "Layered PHP API for a multi-account personal finance manager",
     "type": "project",
     "license": "MIT",
     "require": {
@@ -21,6 +21,12 @@
         "psr-4": {
             "Tests\\": "tests/"
         }
+    },
+    "scripts": {
+        "migrate": "php bin/migrate.php",
+        "recurring": "php bin/run-recurring.php",
+        "serve": "php -S localhost:8000 -t public",
+        "test": "phpunit"
     },
     "config": {
         "sort-packages": true
