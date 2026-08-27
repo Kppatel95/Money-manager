@@ -10,6 +10,7 @@ use App\Controllers\AccountController;
 use App\Controllers\AuthController;
 use App\Controllers\BudgetController;
 use App\Controllers\CategoryController;
+use App\Controllers\DashboardController;
 use App\Controllers\ExpenseController;
 use App\Controllers\RecurringTransactionController;
 use App\Controllers\TransactionController;
@@ -27,6 +28,7 @@ use App\Services\AccountService;
 use App\Services\AuthService;
 use App\Services\BudgetService;
 use App\Services\CategoryService;
+use App\Services\DashboardService;
 use App\Services\RecurringTransactionService;
 use App\Services\TransactionService;
 use App\Support\Logger;
@@ -99,7 +101,8 @@ final class Application
             $this->logger
         );
 
-        $accounts = new AccountService(new AccountRepository($this->pdo));
+        $accountRepository = new AccountRepository($this->pdo);
+        $accounts = new AccountService($accountRepository);
         $categories = new CategoryService(new CategoryRepository($this->pdo));
 
         $transactionRepository = new TransactionRepository($this->pdo);
@@ -113,12 +116,15 @@ final class Application
             $this->logger
         );
 
+        $dashboard = new DashboardService($accountRepository, $transactionRepository, $accounts, $budgets);
+
         $accountController = new AccountController($accounts);
         $categoryController = new CategoryController($categories);
         $transactionController = new TransactionController($transactions);
         $budgetController = new BudgetController($budgets);
         $recurringController = new RecurringTransactionController($this->recurring);
         $authController = new AuthController($auth, $users);
+        $dashboardController = new DashboardController($dashboard);
 
         $this->router->group('/api/v1', function (Router $r) use (
             $accountController,
@@ -126,7 +132,8 @@ final class Application
             $transactionController,
             $budgetController,
             $recurringController,
-            $authController
+            $authController,
+            $dashboardController
         ): void {
             $r->post('/auth/register', fn (Request $q) => $authController->register($q));
             $r->post('/auth/login', fn (Request $q) => $authController->login($q));
@@ -161,6 +168,8 @@ final class Application
             $r->post('/recurring-transactions', $this->authed([$recurringController, 'store']));
             $r->put('/recurring-transactions/{id}', $this->authed([$recurringController, 'update']));
             $r->delete('/recurring-transactions/{id}', $this->authed([$recurringController, 'destroy']));
+
+            $r->get('/dashboard/summary', $this->authed([$dashboardController, 'summary']));
         });
 
         $this->registerLegacyRoutes();
