@@ -11,13 +11,11 @@ use App\Controllers\AuthController;
 use App\Controllers\BudgetController;
 use App\Controllers\CategoryController;
 use App\Controllers\DashboardController;
-use App\Controllers\ExpenseController;
 use App\Controllers\RecurringTransactionController;
 use App\Controllers\TransactionController;
 use App\Repositories\AccountRepository;
 use App\Repositories\BudgetRepository;
 use App\Repositories\CategoryRepository;
-use App\Repositories\ExpenseRepository;
 use App\Repositories\LoginAttemptRepository;
 use App\Repositories\RecurringTransactionRepository;
 use App\Repositories\RefreshTokenRepository;
@@ -174,7 +172,6 @@ final class Application
             $r->get('/dashboard/summary', $this->authed([$dashboardController, 'summary']));
         });
 
-        $this->registerLegacyRoutes();
     }
 
     /**
@@ -220,23 +217,5 @@ final class Application
             // A broken schedule must not take down an unrelated request.
             $this->logger->exception($e, false, ['hook' => 'recurring', 'user_id' => $userId]);
         }
-    }
-
-    /**
-     * The original single-table expense API. Still mounted under /api so the
-     * existing frontend keeps working while /api/v1 is built out.
-     */
-    private function registerLegacyRoutes(): void
-    {
-        $auth = $this->authenticate;
-        $expenses = new ExpenseController(new ExpenseRepository($this->pdo));
-
-        $this->router->group('/api', function (Router $r) use ($expenses, $auth): void {
-            $r->get('/expenses', fn (Request $q) => $expenses->index($q, $auth->handle($q)));
-            $r->post('/expenses', fn (Request $q) => $expenses->store($q, $auth->handle($q)));
-            $r->put('/expenses/{id}', fn (Request $q, array $p) => $expenses->update($q, $auth->handle($q), $p['id']));
-            $r->delete('/expenses/{id}', fn (Request $q, array $p) => $expenses->destroy($q, $auth->handle($q), $p['id']));
-            $r->get('/summary', fn (Request $q) => $expenses->summary($q, $auth->handle($q)));
-        });
     }
 }
