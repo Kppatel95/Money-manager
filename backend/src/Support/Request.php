@@ -13,11 +13,13 @@ use App\Exceptions\BadRequestException;
  */
 final class Request
 {
-    /** @var array<string, mixed> */
-    private array $body;
+    /** @var array<string, mixed>|null decoded lazily, see body() */
+    private ?array $body = null;
 
     /** @var array<string, string> lower-cased header name => value */
     private array $headers;
+
+    private string $rawBody;
 
     /**
      * @param array<string, mixed> $query
@@ -36,24 +38,42 @@ final class Request
             $this->headers[strtolower((string) $name)] = (string) $value;
         }
 
-        if (trim($rawBody) === '') {
-            $this->body = [];
-            return;
+        $this->rawBody = $rawBody;
+    }
+
+    /**
+     * Decodes the body on first use rather than in the constructor, so a
+     * malformed payload surfaces as a 400 from inside the request pipeline
+     * instead of blowing up while the Request is still being built.
+     *
+     * @return array<string, mixed>
+     */
+    private function body(): array
+    {
+        if ($this->body !== null) {
+            return $this->body;
         }
 
-        $decoded = json_decode($rawBody, true);
-
-        if (!is_array($decoded)) {
-            // Form posts still work; anything else that is not valid JSON is
-            // the client's problem and surfaces as a 400.
-            parse_str($rawBody, $parsed);
-            if ($parsed === [] || array_key_first($parsed) === $rawBody) {
-                throw new BadRequestException('Request body must be valid JSON.');
-            }
-            $decoded = $parsed;
+        if (trim($this->rawBody) === '') {
+            return $this->body = [];
         }
 
-        $this->body = $decoded;
+        $decoded = json_decode($this->rawBody, true);
+
+        if (is_array($decoded)) {
+            return $this->body = $decoded;
+        }
+
+        // Form posts are still accepted when the client says that is what it
+        // sent; anything else that will not parse as JSON is a 400 rather
+        // than a silently empty payload that fails validation confusingly.
+        if (str_contains(strtolower($this->headers['content-type'] ?? ''), 'application/x-www-form-urlencoded')) {
+            parse_str($this->rawBody, $parsed);
+
+            return $this->body = $parsed;
+        }
+
+        throw new BadRequestException('Request body must be valid JSON.');
     }
 
     public static function fromGlobals(): self
@@ -110,18 +130,18 @@ final class Request
 
     public function input(string $key, mixed $default = null): mixed
     {
-        return $this->body[$key] ?? $default;
+        return $this->body()[$key] ?? $default;
     }
 
     public function has(string $key): bool
     {
-        return array_key_exists($key, $this->body);
+        return array_key_exists($key, $this->body());
     }
 
     /** @return array<string, mixed> */
     public function all(): array
     {
-        return $this->body;
+        return $this->body();
     }
 
     public function query(string $key, mixed $default = null): mixed

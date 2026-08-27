@@ -26,6 +26,16 @@ final class TransactionController extends Controller
         return Response::data($result['data'], 200, $result['meta']);
     }
 
+    public function export(Request $request, int $userId): Response
+    {
+        $csv = $this->transactions->exportCsv($userId, TransactionService::filtersFromRequest($request));
+
+        return Response::raw($csv, 200, [
+            'Content-Type' => 'text/csv; charset=utf-8',
+            'Content-Disposition' => 'attachment; filename="transactions-' . date('Y-m-d') . '.csv"',
+        ]);
+    }
+
     public function store(Request $request, int $userId): Response
     {
         return Response::created($this->transactions->create($userId, $request->all()));

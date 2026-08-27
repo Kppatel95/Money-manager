@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
 use App\Repositories\TransactionRepository;
+use App\Support\Csv;
 use App\Support\Money;
 use App\Support\Request;
 use App\Validation\Validator;
@@ -70,6 +71,33 @@ final class TransactionService
     public function listAll(int $userId, array $filters): array
     {
         return array_map([$this, 'present'], $this->transactions->all($userId, $this->normaliseFilters($filters)));
+    }
+
+    /**
+     * The filtered set as a CSV document -- same filters as the list
+     * endpoint, no pagination, because an export that stopped at page one
+     * would be a bug report waiting to happen.
+     *
+     * @param array<string, mixed> $filters
+     */
+    public function exportCsv(int $userId, array $filters): string
+    {
+        $rows = array_map(static fn (array $t): array => [
+            $t['transaction_date'],
+            $t['type'],
+            Money::format($t['amount_cents']),
+            $t['account_name'],
+            $t['transfer_to_account_name'] ?? '',
+            $t['category_name'] ?? '',
+            $t['description'],
+            $t['notes'] ?? '',
+            implode(' ', $t['tags']),
+        ], $this->listAll($userId, $filters));
+
+        return Csv::build(
+            ['date', 'type', 'amount', 'account', 'transfer_to_account', 'category', 'description', 'notes', 'tags'],
+            $rows
+        );
     }
 
     /** @return array<string, mixed> */

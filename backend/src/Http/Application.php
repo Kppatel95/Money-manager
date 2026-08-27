@@ -154,6 +154,8 @@ final class Application
             $r->delete('/categories/{id}', $this->authed([$categoryController, 'destroy']));
 
             $r->get('/transactions', $this->authed([$transactionController, 'index']));
+            // Registered before /transactions/{id} so the literal path wins.
+            $r->get('/transactions/export', $this->authed([$transactionController, 'export']));
             $r->post('/transactions', $this->authed([$transactionController, 'store']));
             $r->get('/transactions/{id}', $this->authed([$transactionController, 'show']));
             $r->put('/transactions/{id}', $this->authed([$transactionController, 'update']));
