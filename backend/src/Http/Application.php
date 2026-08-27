@@ -6,11 +6,17 @@ namespace App\Http;
 
 use App\Auth\Authenticate;
 use App\Auth\JwtService;
+use App\Controllers\AccountController;
 use App\Controllers\AuthController;
+use App\Controllers\CategoryController;
 use App\Controllers\ExpenseController;
+use App\Repositories\AccountRepository;
+use App\Repositories\CategoryRepository;
 use App\Repositories\ExpenseRepository;
 use App\Repositories\UserRepository;
 use App\Router;
+use App\Services\AccountService;
+use App\Services\CategoryService;
 use App\Support\Logger;
 use App\Support\Request;
 use App\Support\Response;
@@ -20,15 +26,17 @@ use Throwable;
 /**
  * Composition root: builds the object graph, registers the routes, and turns a
  * Request into a Response. public/index.php only has to send the result, and
- * the integration tests can drive the exact same code path in-process.
+ * the integration tests drive the exact same code path in-process.
  *
- * There is no DI container on purpose -- with this many collaborators, wiring
- * them by hand in one readable method is easier to follow than configuring a
- * container, and it keeps constructor injection honest everywhere else.
+ * There is no DI container on purpose -- wiring these collaborators by hand in
+ * one readable method is easier to follow than configuring a container, and it
+ * keeps constructor injection honest everywhere else.
  */
 final class Application
 {
     private Router $router;
+
+    private Authenticate $authenticate;
 
     private function __construct(
         private readonly PDO $pdo,
@@ -64,17 +72,51 @@ final class Application
     {
         $users = new UserRepository($this->pdo);
         $jwt = new JwtService();
-        $auth = new Authenticate($jwt, $users);
+        $this->authenticate = new Authenticate($jwt, $users);
 
-        $this->registerLegacyRoutes($users, $jwt, $auth);
+        $accounts = new AccountService(new AccountRepository($this->pdo));
+        $categories = new CategoryService(new CategoryRepository($this->pdo));
+
+        $accountController = new AccountController($accounts);
+        $categoryController = new CategoryController($categories);
+
+        $this->router->group('/api/v1', function (Router $r) use ($accountController, $categoryController): void {
+            $r->get('/accounts', $this->authed([$accountController, 'index']));
+            $r->post('/accounts', $this->authed([$accountController, 'store']));
+            $r->get('/accounts/{id}', $this->authed([$accountController, 'show']));
+            $r->put('/accounts/{id}', $this->authed([$accountController, 'update']));
+            $r->delete('/accounts/{id}', $this->authed([$accountController, 'destroy']));
+            $r->get('/accounts/{id}/balance', $this->authed([$accountController, 'balance']));
+
+            $r->get('/categories', $this->authed([$categoryController, 'index']));
+            $r->post('/categories', $this->authed([$categoryController, 'store']));
+            $r->put('/categories/{id}', $this->authed([$categoryController, 'update']));
+            $r->delete('/categories/{id}', $this->authed([$categoryController, 'destroy']));
+        });
+
+        $this->registerLegacyRoutes($users, $jwt);
+    }
+
+    /**
+     * Wraps a controller method so it only runs for an authenticated caller,
+     * and receives the caller's id rather than digging it out of the request.
+     */
+    private function authed(callable $handler): callable
+    {
+        return function (Request $request, array $params = []) use ($handler): Response {
+            $user = $this->authenticate->handle($request);
+
+            return $handler($request, (int) $user['id'], $params);
+        };
     }
 
     /**
      * The original single-table expense API. Still mounted under /api so the
      * existing frontend keeps working while /api/v1 is built out.
      */
-    private function registerLegacyRoutes(UserRepository $users, JwtService $jwt, Authenticate $auth): void
+    private function registerLegacyRoutes(UserRepository $users, JwtService $jwt): void
     {
+        $auth = $this->authenticate;
         $authController = new AuthController($users, $jwt);
         $expenses = new ExpenseController(new ExpenseRepository($this->pdo));
 
