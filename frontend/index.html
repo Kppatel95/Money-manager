@@ -2,9 +2,33 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Expense Tracker</title>
+    <meta name="description" content="A personal finance manager: accounts, a categorised ledger, budgets and recurring transactions." />
+    <meta name="color-scheme" content="light dark" />
+    <title>Ledger — Personal Finance</title>
+    <script>
+      /*
+       * Paint the stored theme before React mounts.
+       *
+       * Without this the first frame renders with the light palette and then
+       * snaps to dark once ThemeProvider runs, which is a visible flash on
+       * every reload. Inline and synchronous by necessity — an external file
+       * would be fetched after the document has already begun painting.
+       */
+      ;(function () {
+        try {
+          var stored = localStorage.getItem('pf.theme')
+          var dark =
+            stored === 'dark' ||
+            ((!stored || stored === 'system') && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+        } catch (e) {
+          /* private mode — the default light theme is fine */
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
