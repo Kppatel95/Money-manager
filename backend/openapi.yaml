@@ -362,6 +362,25 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /subcategories:
+    get:
+      tags: [Categories]
+      summary: List subcategories
+      description: "System defaults only; there is no per-user subcategory management yet."
+      parameters:
+        - { name: category_id, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: Subcategories
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Subcategory" }
+
   /transactions:
     get:
       tags: [Transactions]
@@ -369,6 +388,7 @@ paths:
       parameters:
         - { name: account_id, in: query, schema: { type: integer }, description: "Matches both sides of a transfer." }
         - { name: category_id, in: query, schema: { type: integer } }
+        - { name: subcategory_id, in: query, schema: { type: integer } }
         - { name: type, in: query, schema: { type: string, enum: [income, expense, transfer] } }
         - { name: date_from, in: query, schema: { type: string, format: date } }
         - { name: date_to, in: query, schema: { type: string, format: date } }
@@ -420,6 +440,7 @@ paths:
       parameters:
         - { name: account_id, in: query, schema: { type: integer } }
         - { name: category_id, in: query, schema: { type: integer } }
+        - { name: subcategory_id, in: query, schema: { type: integer } }
         - { name: type, in: query, schema: { type: string, enum: [income, expense, transfer] } }
         - { name: date_from, in: query, schema: { type: string, format: date } }
         - { name: date_to, in: query, schema: { type: string, format: date } }
@@ -782,6 +803,14 @@ components:
         is_system: { type: boolean, description: "System categories are shared and read-only." }
         created_at: { type: string, nullable: true }
 
+    Subcategory:
+      type: object
+      properties:
+        id: { type: integer }
+        category_id: { type: integer }
+        name: { type: string }
+        created_at: { type: string, nullable: true }
+
     TransactionInput:
       type: object
       required: [type, account_id, amount, transaction_date]
@@ -789,6 +818,7 @@ components:
         type: { type: string, enum: [income, expense, transfer] }
         account_id: { type: integer, description: "The account the money leaves or enters." }
         category_id: { type: integer, nullable: true, description: "Required for income and expense; must be null for transfers." }
+        subcategory_id: { type: integer, nullable: true, description: "Optional; must belong to category_id, and must be null for transfers." }
         transfer_to_account_id: { type: integer, nullable: true, description: "Required for transfers only." }
         amount: { type: string, example: "42.55", description: "Major units, always positive." }
         description: { type: string, maxLength: 255 }
@@ -816,6 +846,8 @@ components:
         category_name: { type: string, nullable: true }
         category_icon: { type: string, nullable: true }
         category_color: { type: string, nullable: true }
+        subcategory_id: { type: integer, nullable: true }
+        subcategory_name: { type: string, nullable: true }
         description: { type: string }
         notes: { type: string, nullable: true }
         tags:

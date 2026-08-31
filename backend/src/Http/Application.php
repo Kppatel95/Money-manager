@@ -12,6 +12,7 @@ use App\Controllers\BudgetController;
 use App\Controllers\CategoryController;
 use App\Controllers\DashboardController;
 use App\Controllers\RecurringTransactionController;
+use App\Controllers\SubcategoryController;
 use App\Controllers\TransactionController;
 use App\Repositories\AccountRepository;
 use App\Repositories\BudgetRepository;
@@ -19,6 +20,7 @@ use App\Repositories\CategoryRepository;
 use App\Repositories\LoginAttemptRepository;
 use App\Repositories\RecurringTransactionRepository;
 use App\Repositories\RefreshTokenRepository;
+use App\Repositories\SubcategoryRepository;
 use App\Repositories\TransactionRepository;
 use App\Repositories\UserRepository;
 use App\Router;
@@ -28,6 +30,7 @@ use App\Services\BudgetService;
 use App\Services\CategoryService;
 use App\Services\DashboardService;
 use App\Services\RecurringTransactionService;
+use App\Services\SubcategoryService;
 use App\Services\TransactionService;
 use App\Support\Logger;
 use App\Support\Request;
@@ -102,9 +105,10 @@ final class Application
         $accountRepository = new AccountRepository($this->pdo);
         $accounts = new AccountService($accountRepository);
         $categories = new CategoryService(new CategoryRepository($this->pdo));
+        $subcategories = new SubcategoryService(new SubcategoryRepository($this->pdo));
 
         $transactionRepository = new TransactionRepository($this->pdo);
-        $transactions = new TransactionService($transactionRepository, $accounts, $categories);
+        $transactions = new TransactionService($transactionRepository, $accounts, $categories, $subcategories);
         $budgets = new BudgetService(new BudgetRepository($this->pdo), $transactionRepository, $categories);
         $this->recurring = new RecurringTransactionService(
             new RecurringTransactionRepository($this->pdo),
@@ -118,6 +122,7 @@ final class Application
 
         $accountController = new AccountController($accounts);
         $categoryController = new CategoryController($categories);
+        $subcategoryController = new SubcategoryController($subcategories);
         $transactionController = new TransactionController($transactions);
         $budgetController = new BudgetController($budgets);
         $recurringController = new RecurringTransactionController($this->recurring);
@@ -127,6 +132,7 @@ final class Application
         $this->router->group('/api/v1', function (Router $r) use (
             $accountController,
             $categoryController,
+            $subcategoryController,
             $transactionController,
             $budgetController,
             $recurringController,
@@ -150,6 +156,8 @@ final class Application
             $r->post('/categories', $this->authed([$categoryController, 'store']));
             $r->put('/categories/{id}', $this->authed([$categoryController, 'update']));
             $r->delete('/categories/{id}', $this->authed([$categoryController, 'destroy']));
+
+            $r->get('/subcategories', $this->authed([$subcategoryController, 'index']));
 
             $r->get('/transactions', $this->authed([$transactionController, 'index']));
             // Registered before /transactions/{id} so the literal path wins.

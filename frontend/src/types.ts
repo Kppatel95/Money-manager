@@ -142,6 +142,13 @@ export interface CategoryInput {
   color?: string
 }
 
+export interface Subcategory {
+  id: number
+  category_id: number
+  name: string
+  created_at: string | null
+}
+
 /* -------------------------------------------------------------------------- */
 /* Transactions                                                               */
 /* -------------------------------------------------------------------------- */
@@ -162,6 +169,8 @@ export interface Transaction {
   category_name: string | null
   category_icon: string | null
   category_color: string | null
+  subcategory_id: number | null
+  subcategory_name: string | null
   description: string
   notes: string | null
   tags: string[]
@@ -175,6 +184,8 @@ export interface TransactionInput {
   account_id: number
   /** Required for income/expense, must be null for transfers. */
   category_id?: number | null
+  /** Optional; must belong to category_id, and must be null for transfers. */
+  subcategory_id?: number | null
   /** Required for transfers only. */
   transfer_to_account_id?: number | null
   /** Major units, always positive, as a string. */
@@ -188,6 +199,7 @@ export interface TransactionInput {
 export interface TransactionFilters {
   account_id?: number
   category_id?: number
+  subcategory_id?: number
   type?: TransactionType
   date_from?: string
   date_to?: string

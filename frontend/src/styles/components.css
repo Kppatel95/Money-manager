@@ -161,6 +161,12 @@
   line-height: 1;
 }
 
+.chip__subcategory {
+  margin-top: 0.2rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
 /* ------------------------------------------------------------- progress */
 
 .progress {

@@ -8,9 +8,11 @@ use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
 use App\Repositories\AccountRepository;
 use App\Repositories\CategoryRepository;
+use App\Repositories\SubcategoryRepository;
 use App\Repositories\TransactionRepository;
 use App\Services\AccountService;
 use App\Services\CategoryService;
+use App\Services\SubcategoryService;
 use App\Services\TransactionService;
 use Tests\Support\ServiceTestCase;
 
@@ -30,10 +32,12 @@ final class TransactionServiceTest extends ServiceTestCase
 
         $this->accounts = new AccountService(new AccountRepository($this->pdo));
         $categories = new CategoryService(new CategoryRepository($this->pdo));
+        $subcategories = new SubcategoryService(new SubcategoryRepository($this->pdo));
         $this->service = new TransactionService(
             new TransactionRepository($this->pdo),
             $this->accounts,
-            $categories
+            $categories,
+            $subcategories
         );
 
         $this->userId = $this->createUser();
@@ -68,6 +72,40 @@ final class TransactionServiceTest extends ServiceTestCase
             100000 - 4255,
             $this->accounts->balance($this->userId, $this->checkingId)['balance_cents']
         );
+    }
+
+    public function testRecordingAnExpenseWithASubcategory(): void
+    {
+        $groceriesId = $this->subcategoryId('Food', 'Groceries');
+
+        $transaction = $this->service->create($this->userId, [
+            'type' => 'expense',
+            'account_id' => $this->checkingId,
+            'category_id' => $this->foodId,
+            'subcategory_id' => $groceriesId,
+            'amount' => '42.55',
+            'description' => 'Groceries',
+            'transaction_date' => '2026-03-04',
+        ]);
+
+        $this->assertSame($groceriesId, $transaction['subcategory_id']);
+        $this->assertSame('Groceries', $transaction['subcategory_name']);
+    }
+
+    public function testRejectsASubcategoryThatBelongsToAnotherCategory(): void
+    {
+        $transportSubId = $this->subcategoryId('Transport', 'Fuel');
+
+        $this->expectException(ValidationException::class);
+        $this->service->create($this->userId, [
+            'type' => 'expense',
+            'account_id' => $this->checkingId,
+            'category_id' => $this->foodId,
+            'subcategory_id' => $transportSubId,
+            'amount' => '10.00',
+            'description' => 'Groceries',
+            'transaction_date' => '2026-03-04',
+        ]);
     }
 
     public function testRecordingIncomeRaisesTheAccountBalance(): void
