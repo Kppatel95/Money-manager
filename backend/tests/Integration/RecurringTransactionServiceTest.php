@@ -9,10 +9,12 @@ use App\Exceptions\ValidationException;
 use App\Repositories\AccountRepository;
 use App\Repositories\CategoryRepository;
 use App\Repositories\RecurringTransactionRepository;
+use App\Repositories\SubcategoryRepository;
 use App\Repositories\TransactionRepository;
 use App\Services\AccountService;
 use App\Services\CategoryService;
 use App\Services\RecurringTransactionService;
+use App\Services\SubcategoryService;
 use App\Services\TransactionService;
 use Tests\Support\ServiceTestCase;
 
@@ -35,7 +37,8 @@ final class RecurringTransactionServiceTest extends ServiceTestCase
         $transactionRepository = new TransactionRepository($this->pdo);
         $this->repository = new RecurringTransactionRepository($this->pdo);
 
-        $this->transactions = new TransactionService($transactionRepository, $this->accounts, $categories);
+        $subcategories = new SubcategoryService(new SubcategoryRepository($this->pdo));
+        $this->transactions = new TransactionService($transactionRepository, $this->accounts, $categories, $subcategories);
         $this->recurring = new RecurringTransactionService(
             $this->repository,
             $transactionRepository,

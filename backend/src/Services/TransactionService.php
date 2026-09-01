@@ -35,7 +35,8 @@ final class TransactionService
     public function __construct(
         private readonly TransactionRepository $transactions,
         private readonly AccountService $accounts,
-        private readonly CategoryService $categories
+        private readonly CategoryService $categories,
+        private readonly SubcategoryService $subcategories
     ) {
     }
 
@@ -89,13 +90,17 @@ final class TransactionService
             $t['account_name'],
             $t['transfer_to_account_name'] ?? '',
             $t['category_name'] ?? '',
+            $t['subcategory_name'] ?? '',
             $t['description'],
             $t['notes'] ?? '',
             implode(' ', $t['tags']),
         ], $this->listAll($userId, $filters));
 
         return Csv::build(
-            ['date', 'type', 'amount', 'account', 'transfer_to_account', 'category', 'description', 'notes', 'tags'],
+            [
+                'date', 'type', 'amount', 'account', 'transfer_to_account',
+                'category', 'subcategory', 'description', 'notes', 'tags',
+            ],
             $rows
         );
     }
@@ -145,6 +150,7 @@ final class TransactionService
         return [
             'account_id' => $request->query('account_id'),
             'category_id' => $request->query('category_id'),
+            'subcategory_id' => $request->query('subcategory_id'),
             'type' => $request->query('type'),
             'date_from' => $request->query('date_from'),
             'date_to' => $request->query('date_to'),
@@ -164,7 +170,7 @@ final class TransactionService
         $clean = [];
         $errors = [];
 
-        foreach (['account_id', 'category_id'] as $key) {
+        foreach (['account_id', 'category_id', 'subcategory_id'] as $key) {
             $value = $filters[$key] ?? null;
             if ($value !== null && $value !== '') {
                 if (!ctype_digit((string) $value)) {
@@ -223,6 +229,7 @@ final class TransactionService
         $notes = $v->optionalString('notes', 2000);
         $tags = $v->optionalTags();
         $categoryId = $v->optionalId('category_id');
+        $subcategoryId = $v->optionalId('subcategory_id');
         $transferTo = $v->optionalId('transfer_to_account_id');
 
         if ($type === 'transfer') {
@@ -233,6 +240,9 @@ final class TransactionService
             }
             if ($categoryId !== null) {
                 $v->add('category_id', 'Transfers are not categorised.');
+            }
+            if ($subcategoryId !== null) {
+                $v->add('subcategory_id', 'Transfers are not categorised.');
             }
         } else {
             if ($transferTo !== null) {
@@ -266,9 +276,15 @@ final class TransactionService
             $this->categories->requireVisible($userId, $categoryId, $type);
         }
 
+        if ($subcategoryId !== null) {
+            /** @var int $categoryId */
+            $this->subcategories->requireValid($subcategoryId, $categoryId);
+        }
+
         return [
             'account_id' => $accountId,
             'category_id' => $categoryId,
+            'subcategory_id' => $subcategoryId,
             'type' => $type,
             'amount' => $amount,
             'transfer_to_account_id' => $type === 'transfer' ? $transferTo : null,
@@ -292,6 +308,7 @@ final class TransactionService
             'type' => $existing['type'],
             'account_id' => (int) $existing['account_id'],
             'category_id' => $existing['category_id'] === null ? null : (int) $existing['category_id'],
+            'subcategory_id' => $existing['subcategory_id'] === null ? null : (int) $existing['subcategory_id'],
             'amount' => Money::toMajor((int) $existing['amount']),
             'transfer_to_account_id' => $existing['transfer_to_account_id'] === null
                 ? null
@@ -309,6 +326,10 @@ final class TransactionService
         // them explicitly in the same request.
         if ($merged['type'] === 'transfer' && !array_key_exists('category_id', $payload)) {
             $merged['category_id'] = null;
+        }
+
+        if ($merged['type'] === 'transfer' && !array_key_exists('subcategory_id', $payload)) {
+            $merged['subcategory_id'] = null;
         }
 
         if ($merged['type'] !== 'transfer' && !array_key_exists('transfer_to_account_id', $payload)) {
@@ -373,6 +394,8 @@ final class TransactionService
             'category_name' => $row['category_name'] ?? null,
             'category_icon' => $row['category_icon'] ?? null,
             'category_color' => $row['category_color'] ?? null,
+            'subcategory_id' => $row['subcategory_id'] === null ? null : (int) $row['subcategory_id'],
+            'subcategory_name' => $row['subcategory_name'] ?? null,
             'description' => $row['description'],
             'notes' => $row['notes'],
             'tags' => $this->decodeTags($row['tags'] ?? null),

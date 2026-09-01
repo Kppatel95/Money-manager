@@ -10,10 +10,12 @@ use App\Exceptions\ValidationException;
 use App\Repositories\AccountRepository;
 use App\Repositories\BudgetRepository;
 use App\Repositories\CategoryRepository;
+use App\Repositories\SubcategoryRepository;
 use App\Repositories\TransactionRepository;
 use App\Services\AccountService;
 use App\Services\BudgetService;
 use App\Services\CategoryService;
+use App\Services\SubcategoryService;
 use App\Services\TransactionService;
 use Tests\Support\ServiceTestCase;
 
@@ -34,7 +36,8 @@ final class BudgetServiceTest extends ServiceTestCase
         $categories = new CategoryService(new CategoryRepository($this->pdo));
         $transactionRepository = new TransactionRepository($this->pdo);
 
-        $this->transactions = new TransactionService($transactionRepository, $accounts, $categories);
+        $subcategories = new SubcategoryService(new SubcategoryRepository($this->pdo));
+        $this->transactions = new TransactionService($transactionRepository, $accounts, $categories, $subcategories);
         $this->budgets = new BudgetService(new BudgetRepository($this->pdo), $transactionRepository, $categories);
 
         $this->userId = $this->createUser();

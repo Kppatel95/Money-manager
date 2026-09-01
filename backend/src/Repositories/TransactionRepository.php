@@ -21,11 +21,13 @@ final class TransactionRepository
             ta.name AS transfer_to_account_name,
             c.name AS category_name,
             c.icon AS category_icon,
-            c.color AS category_color
+            c.color AS category_color,
+            sc.name AS subcategory_name
         FROM transactions t
         JOIN accounts a ON a.id = t.account_id
         LEFT JOIN accounts ta ON ta.id = t.transfer_to_account_id
-        LEFT JOIN categories c ON c.id = t.category_id';
+        LEFT JOIN categories c ON c.id = t.category_id
+        LEFT JOIN subcategories sc ON sc.id = t.subcategory_id';
 
     public function __construct(private readonly PDO $pdo)
     {
@@ -85,16 +87,17 @@ final class TransactionRepository
     {
         $stmt = $this->pdo->prepare(
             'INSERT INTO transactions
-                (user_id, account_id, category_id, type, amount, transfer_to_account_id,
+                (user_id, account_id, category_id, subcategory_id, type, amount, transfer_to_account_id,
                  description, notes, tags, transaction_date)
              VALUES
-                (:user_id, :account_id, :category_id, :type, :amount, :transfer_to_account_id,
+                (:user_id, :account_id, :category_id, :subcategory_id, :type, :amount, :transfer_to_account_id,
                  :description, :notes, :tags, :transaction_date)'
         );
         $stmt->execute([
             'user_id' => $userId,
             'account_id' => $data['account_id'],
             'category_id' => $data['category_id'],
+            'subcategory_id' => $data['subcategory_id'],
             'type' => $data['type'],
             'amount' => $data['amount'],
             'transfer_to_account_id' => $data['transfer_to_account_id'],
@@ -115,6 +118,7 @@ final class TransactionRepository
             "UPDATE transactions SET
                 account_id = :account_id,
                 category_id = :category_id,
+                subcategory_id = :subcategory_id,
                 type = :type,
                 amount = :amount,
                 transfer_to_account_id = :transfer_to_account_id,
@@ -128,6 +132,7 @@ final class TransactionRepository
         $stmt->execute([
             'account_id' => $data['account_id'],
             'category_id' => $data['category_id'],
+            'subcategory_id' => $data['subcategory_id'],
             'type' => $data['type'],
             'amount' => $data['amount'],
             'transfer_to_account_id' => $data['transfer_to_account_id'],
@@ -299,6 +304,11 @@ final class TransactionRepository
         if (!empty($filters['category_id'])) {
             $where[] = 't.category_id = :category_id';
             $params['category_id'] = (int) $filters['category_id'];
+        }
+
+        if (!empty($filters['subcategory_id'])) {
+            $where[] = 't.subcategory_id = :subcategory_id';
+            $params['subcategory_id'] = (int) $filters['subcategory_id'];
         }
 
         if (!empty($filters['type'])) {

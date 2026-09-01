@@ -122,6 +122,7 @@ final class RecurringTransactionService
                 $created[] = $this->transactions->create($userId, [
                     'account_id' => (int) $schedule['account_id'],
                     'category_id' => $schedule['category_id'] === null ? null : (int) $schedule['category_id'],
+                    'subcategory_id' => null,
                     'type' => $schedule['type'],
                     'amount' => (int) $schedule['amount'],
                     'transfer_to_account_id' => null,

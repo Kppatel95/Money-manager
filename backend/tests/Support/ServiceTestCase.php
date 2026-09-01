@@ -51,4 +51,16 @@ abstract class ServiceTestCase extends TestCase
 
         return (int) $stmt->fetchColumn();
     }
+
+    protected function subcategoryId(string $categoryName, string $subcategoryName): int
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT sc.id FROM subcategories sc
+             JOIN categories c ON c.id = sc.category_id
+             WHERE c.user_id IS NULL AND c.name = :category AND sc.name = :subcategory'
+        );
+        $stmt->execute(['category' => $categoryName, 'subcategory' => $subcategoryName]);
+
+        return (int) $stmt->fetchColumn();
+    }
 }

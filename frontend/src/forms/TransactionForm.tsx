@@ -16,6 +16,7 @@ const FIELDS = [
   'type',
   'account_id',
   'category_id',
+  'subcategory_id',
   'transfer_to_account_id',
   'amount',
   'description',
@@ -49,7 +50,7 @@ interface TransactionFormProps {
  * rendered.
  */
 export function TransactionForm({ transaction, defaultType = 'expense', onSubmit, onCancel }: TransactionFormProps) {
-  const { activeAccounts, expenseCategories, incomeCategories } = useReferenceData()
+  const { activeAccounts, expenseCategories, incomeCategories, subcategoriesByCategory } = useReferenceData()
   const [formError, setFormError] = useState<string | null>(null)
 
   const {
@@ -65,6 +66,7 @@ export function TransactionForm({ transaction, defaultType = 'expense', onSubmit
       type: transaction?.type ?? defaultType,
       account_id: transaction ? String(transaction.account_id) : String(activeAccounts[0]?.id ?? ''),
       category_id: transaction?.category_id ? String(transaction.category_id) : '',
+      subcategory_id: transaction?.subcategory_id ? String(transaction.subcategory_id) : '',
       transfer_to_account_id: transaction?.transfer_to_account_id ? String(transaction.transfer_to_account_id) : '',
       amount: transaction ? centsToDecimalString(transaction.amount_cents) : '',
       description: transaction?.description ?? '',
@@ -76,7 +78,9 @@ export function TransactionForm({ transaction, defaultType = 'expense', onSubmit
 
   const type = watch('type')
   const accountId = watch('account_id')
+  const categoryId = watch('category_id')
   const categories = type === 'income' ? incomeCategories : expenseCategories
+  const subcategories = subcategoriesByCategory(categoryId ? Number(categoryId) : null)
 
   const chooseType = (next: TransactionType) => {
     setValue('type', next)
@@ -86,7 +90,11 @@ export function TransactionForm({ transaction, defaultType = 'expense', onSubmit
     else setValue('transfer_to_account_id', '')
     // An expense category is meaningless on an income row and vice versa.
     if (next !== type) setValue('category_id', '')
+    setValue('subcategory_id', '')
   }
+
+  // A subcategory from the old category would not belong to the new one.
+  const clearSubcategory = () => setValue('subcategory_id', '')
 
   const submit = handleSubmit(async (values) => {
     setFormError(null)
@@ -97,6 +105,7 @@ export function TransactionForm({ transaction, defaultType = 'expense', onSubmit
         type: values.type,
         account_id: Number(values.account_id),
         category_id: isTransfer ? null : Number(values.category_id),
+        subcategory_id: isTransfer || !values.subcategory_id ? null : Number(values.subcategory_id),
         transfer_to_account_id: isTransfer ? Number(values.transfer_to_account_id) : null,
         amount: values.amount,
         description: values.description.trim(),
@@ -163,7 +172,11 @@ export function TransactionForm({ transaction, defaultType = 'expense', onSubmit
         ) : (
           <Field label="Category" error={errors.category_id?.message} required>
             {(props) => (
-              <select {...props} {...register('category_id')} className="select">
+              <select
+                {...props}
+                {...register('category_id', { onChange: clearSubcategory })}
+                className="select"
+              >
                 <option value="">Select a category…</option>
                 {categories.map((category) => (
                   <option key={category.id} value={category.id}>
@@ -176,6 +189,23 @@ export function TransactionForm({ transaction, defaultType = 'expense', onSubmit
           </Field>
         )}
       </FieldRow>
+
+      {type !== 'transfer' && subcategories.length > 0 && (
+        <FieldRow>
+          <Field label="Subcategory" error={errors.subcategory_id?.message} hint="Optional.">
+            {(props) => (
+              <select {...props} {...register('subcategory_id')} className="select">
+                <option value="">No subcategory</option>
+                {subcategories.map((subcategory) => (
+                  <option key={subcategory.id} value={subcategory.id}>
+                    {subcategory.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+        </FieldRow>
+      )}
 
       <FieldRow>
         <Field label="Amount" error={errors.amount?.message} required>

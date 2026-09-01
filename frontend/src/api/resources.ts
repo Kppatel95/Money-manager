@@ -17,6 +17,7 @@ import type {
   RecurringTransactionInput,
   RegisterInput,
   Session,
+  Subcategory,
   Transaction,
   TransactionFilters,
   TransactionInput,
@@ -104,9 +105,20 @@ export const categoriesApi = {
 
 /* -------------------------------------------------------------------------- */
 
+export const subcategoriesApi = {
+  async list(categoryId?: number, signal?: AbortSignal): Promise<Subcategory[]> {
+    return unwrap(
+      await request<Envelope<Subcategory[]>>('/subcategories', { query: { category_id: categoryId }, signal }),
+    )
+  },
+}
+
+/* -------------------------------------------------------------------------- */
+
 const transactionQuery = (filters: TransactionFilters) => ({
   account_id: filters.account_id,
   category_id: filters.category_id,
+  subcategory_id: filters.subcategory_id,
   type: filters.type,
   date_from: filters.date_from,
   date_to: filters.date_to,

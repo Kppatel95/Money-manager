@@ -34,6 +34,7 @@ function readFilters(params: URLSearchParams): TransactionFilters {
     search: params.get('search') ?? undefined,
     account_id: number('account_id'),
     category_id: number('category_id'),
+    subcategory_id: number('subcategory_id'),
     type: TRANSACTION_TYPES.includes(type as TransactionType) ? (type as TransactionType) : undefined,
     date_from: params.get('date_from') ?? undefined,
     date_to: params.get('date_to') ?? undefined,
@@ -44,7 +45,13 @@ function readFilters(params: URLSearchParams): TransactionFilters {
 
 export function TransactionsPage() {
   const [params, setParams] = useSearchParams()
-  const { activeAccounts, accounts, categories, reload: reloadReference } = useReferenceData()
+  const {
+    activeAccounts,
+    accounts,
+    categories,
+    subcategoriesByCategory,
+    reload: reloadReference,
+  } = useReferenceData()
   const toast = useToast()
 
   const filters = useMemo(() => readFilters(params), [params])
@@ -81,6 +88,7 @@ export function TransactionsPage() {
       filters.search,
       filters.account_id,
       filters.category_id,
+      filters.subcategory_id,
       filters.type,
       filters.date_from,
       filters.date_to,
@@ -91,8 +99,15 @@ export function TransactionsPage() {
   const transactions = data?.data ?? []
   const meta = data?.meta
   const hasFilters = Boolean(
-    filters.search || filters.account_id || filters.category_id || filters.type || filters.date_from || filters.date_to,
+    filters.search ||
+      filters.account_id ||
+      filters.category_id ||
+      filters.subcategory_id ||
+      filters.type ||
+      filters.date_from ||
+      filters.date_to,
   )
+  const filterSubcategories = subcategoriesByCategory(filters.category_id)
 
   const afterWrite = () => {
     setEditing(null)
@@ -209,7 +224,7 @@ export function TransactionsPage() {
             <select
               className="select"
               value={params.get('category_id') ?? ''}
-              onChange={(event) => patchParams({ category_id: event.target.value })}
+              onChange={(event) => patchParams({ category_id: event.target.value, subcategory_id: undefined })}
             >
               <option value="">All categories</option>
               {categories.map((category) => (
@@ -220,6 +235,24 @@ export function TransactionsPage() {
               ))}
             </select>
           </label>
+
+          {filterSubcategories.length > 0 && (
+            <label className="filters__field">
+              <span className="filters__label">Subcategory</span>
+              <select
+                className="select"
+                value={params.get('subcategory_id') ?? ''}
+                onChange={(event) => patchParams({ subcategory_id: event.target.value })}
+              >
+                <option value="">All subcategories</option>
+                {filterSubcategories.map((subcategory) => (
+                  <option key={subcategory.id} value={subcategory.id}>
+                    {subcategory.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <label className="filters__field">
             <span className="filters__label">Type</span>
@@ -332,11 +365,16 @@ export function TransactionsPage() {
                       </td>
                       <td>
                         {transaction.category_name ? (
-                          <CategoryChip
-                            name={transaction.category_name}
-                            icon={transaction.category_icon}
-                            color={transaction.category_color}
-                          />
+                          <>
+                            <CategoryChip
+                              name={transaction.category_name}
+                              icon={transaction.category_icon}
+                              color={transaction.category_color}
+                            />
+                            {transaction.subcategory_name && (
+                              <div className="chip__subcategory">{transaction.subcategory_name}</div>
+                            )}
+                          </>
                         ) : (
                           <span className="text-subtle">—</span>
                         )}

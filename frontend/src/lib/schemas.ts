@@ -64,6 +64,7 @@ export const transactionSchema = z
     type: z.enum(TRANSACTION_TYPES),
     account_id: z.string().min(1, 'Choose an account'),
     category_id: z.string(),
+    subcategory_id: z.string(),
     transfer_to_account_id: z.string(),
     amount: positiveAmount('Amount'),
     description: z
