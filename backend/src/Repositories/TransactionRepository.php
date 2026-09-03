@@ -88,10 +88,10 @@ final class TransactionRepository
         $stmt = $this->pdo->prepare(
             'INSERT INTO transactions
                 (user_id, account_id, category_id, subcategory_id, type, amount, transfer_to_account_id,
-                 description, notes, tags, transaction_date)
+                 description, notes, tags, transaction_date, payment_method)
              VALUES
                 (:user_id, :account_id, :category_id, :subcategory_id, :type, :amount, :transfer_to_account_id,
-                 :description, :notes, :tags, :transaction_date)'
+                 :description, :notes, :tags, :transaction_date, :payment_method)'
         );
         $stmt->execute([
             'user_id' => $userId,
@@ -105,6 +105,7 @@ final class TransactionRepository
             'notes' => $data['notes'],
             'tags' => $data['tags'],
             'transaction_date' => $data['transaction_date'],
+            'payment_method' => $data['payment_method'] ?? null,
         ]);
 
         /** @var array<string, mixed> */
@@ -126,6 +127,7 @@ final class TransactionRepository
                 notes = :notes,
                 tags = :tags,
                 transaction_date = :transaction_date,
+                payment_method = :payment_method,
                 updated_at = datetime('now')
              WHERE id = :id AND user_id = :user_id"
         );
@@ -140,6 +142,7 @@ final class TransactionRepository
             'notes' => $data['notes'],
             'tags' => $data['tags'],
             'transaction_date' => $data['transaction_date'],
+            'payment_method' => $data['payment_method'] ?? null,
             'id' => $id,
             'user_id' => $userId,
         ]);

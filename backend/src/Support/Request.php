@@ -24,6 +24,7 @@ final class Request
     /**
      * @param array<string, mixed> $query
      * @param array<string, string> $headers
+     * @param array<string, array<string, mixed>> $files raw $_FILES-shaped entries, keyed by field name
      */
     public function __construct(
         public readonly string $method,
@@ -31,7 +32,8 @@ final class Request
         private readonly array $query = [],
         array $headers = [],
         string $rawBody = '',
-        public readonly ?string $ip = null
+        public readonly ?string $ip = null,
+        private readonly array $files = []
     ) {
         $this->headers = [];
         foreach ($headers as $name => $value) {
@@ -83,7 +85,12 @@ final class Request
         $path = self::normalisePath(parse_url($uri, PHP_URL_PATH) ?: '/');
 
         $headers = function_exists('getallheaders') ? (getallheaders() ?: []) : [];
-        $raw = file_get_contents('php://input');
+
+        // PHP parses multipart/form-data into $_FILES/$_POST itself and
+        // php://input is not reliably readable once it has -- so a multipart
+        // request skips the JSON body entirely and carries its files instead.
+        $isMultipart = str_starts_with(strtolower($_SERVER['CONTENT_TYPE'] ?? ''), 'multipart/form-data');
+        $raw = $isMultipart ? '' : file_get_contents('php://input');
 
         return new self(
             $method,
@@ -91,7 +98,8 @@ final class Request
             $_GET,
             $headers,
             $raw === false ? '' : $raw,
-            $_SERVER['REMOTE_ADDR'] ?? null
+            $_SERVER['REMOTE_ADDR'] ?? null,
+            $isMultipart ? $_FILES : []
         );
     }
 
@@ -167,6 +175,12 @@ final class Request
     public function header(string $name): ?string
     {
         return $this->headers[strtolower($name)] ?? null;
+    }
+
+    /** Raw `$_FILES`-shaped entry (name, type, tmp_name, error, size) for one uploaded field, or null. */
+    public function file(string $key): ?array
+    {
+        return $this->files[$key] ?? null;
     }
 
     public function bearerToken(): ?string

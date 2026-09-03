@@ -8,6 +8,7 @@ use App\Auth\Authenticate;
 use App\Auth\JwtService;
 use App\Controllers\AccountController;
 use App\Controllers\AuthController;
+use App\Controllers\BillScanController;
 use App\Controllers\BudgetController;
 use App\Controllers\CategoryController;
 use App\Controllers\DashboardController;
@@ -26,12 +27,15 @@ use App\Repositories\UserRepository;
 use App\Router;
 use App\Services\AccountService;
 use App\Services\AuthService;
+use App\Services\BillScanService;
 use App\Services\BudgetService;
 use App\Services\CategoryService;
 use App\Services\DashboardService;
 use App\Services\RecurringTransactionService;
 use App\Services\SubcategoryService;
 use App\Services\TransactionService;
+use App\Support\AnthropicClient;
+use App\Support\Env;
 use App\Support\Logger;
 use App\Support\Request;
 use App\Support\Response;
@@ -120,6 +124,9 @@ final class Application
 
         $dashboard = new DashboardService($accountRepository, $transactionRepository, $accounts, $budgets);
 
+        $ai = new AnthropicClient(Env::get('ANTHROPIC_API_KEY'), Env::get('ANTHROPIC_MODEL', 'claude-sonnet-5') ?? 'claude-sonnet-5');
+        $billScans = new BillScanService($categories, $subcategories, $ai, $this->logger);
+
         $accountController = new AccountController($accounts);
         $categoryController = new CategoryController($categories);
         $subcategoryController = new SubcategoryController($subcategories);
@@ -128,6 +135,7 @@ final class Application
         $recurringController = new RecurringTransactionController($this->recurring);
         $authController = new AuthController($auth, $users);
         $dashboardController = new DashboardController($dashboard);
+        $billScanController = new BillScanController($billScans);
 
         $this->router->group('/api/v1', function (Router $r) use (
             $accountController,
@@ -137,7 +145,8 @@ final class Application
             $budgetController,
             $recurringController,
             $authController,
-            $dashboardController
+            $dashboardController,
+            $billScanController
         ): void {
             $r->post('/auth/register', fn (Request $q) => $authController->register($q));
             $r->post('/auth/login', fn (Request $q) => $authController->login($q));
@@ -178,6 +187,8 @@ final class Application
             $r->delete('/recurring-transactions/{id}', $this->authed([$recurringController, 'destroy']));
 
             $r->get('/dashboard/summary', $this->authed([$dashboardController, 'summary']));
+
+            $r->post('/bill-scans', $this->authed([$billScanController, 'store']));
         });
 
     }

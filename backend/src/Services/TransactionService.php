@@ -91,6 +91,7 @@ final class TransactionService
             $t['transfer_to_account_name'] ?? '',
             $t['category_name'] ?? '',
             $t['subcategory_name'] ?? '',
+            $t['payment_method'] ?? '',
             $t['description'],
             $t['notes'] ?? '',
             implode(' ', $t['tags']),
@@ -99,7 +100,7 @@ final class TransactionService
         return Csv::build(
             [
                 'date', 'type', 'amount', 'account', 'transfer_to_account',
-                'category', 'subcategory', 'description', 'notes', 'tags',
+                'category', 'subcategory', 'payment_method', 'description', 'notes', 'tags',
             ],
             $rows
         );
@@ -231,6 +232,7 @@ final class TransactionService
         $categoryId = $v->optionalId('category_id');
         $subcategoryId = $v->optionalId('subcategory_id');
         $transferTo = $v->optionalId('transfer_to_account_id');
+        $paymentMethod = $v->optionalString('payment_method', 60);
 
         if ($type === 'transfer') {
             if ($transferTo === null) {
@@ -292,6 +294,7 @@ final class TransactionService
             'notes' => $notes,
             'tags' => $tags === null ? null : json_encode($tags, JSON_UNESCAPED_UNICODE),
             'transaction_date' => $date,
+            'payment_method' => $paymentMethod,
         ];
     }
 
@@ -317,6 +320,7 @@ final class TransactionService
             'notes' => $existing['notes'],
             'tags' => $this->decodeTags($existing['tags']),
             'transaction_date' => $existing['transaction_date'],
+            'payment_method' => $existing['payment_method'],
         ];
 
         $merged = array_merge($current, array_intersect_key($payload, $current));
@@ -400,6 +404,7 @@ final class TransactionService
             'notes' => $row['notes'],
             'tags' => $this->decodeTags($row['tags'] ?? null),
             'transaction_date' => $row['transaction_date'],
+            'payment_method' => $row['payment_method'] ?? null,
             'created_at' => $row['created_at'],
             'updated_at' => $row['updated_at'],
         ];

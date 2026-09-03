@@ -23,6 +23,7 @@ const FIELDS = [
   'notes',
   'tags',
   'transaction_date',
+  'payment_method',
 ] as const
 
 const TYPE_LABELS: Record<TransactionType, string> = {
@@ -73,6 +74,7 @@ export function TransactionForm({ transaction, defaultType = 'expense', onSubmit
       notes: transaction?.notes ?? '',
       tags: transaction?.tags.join(', ') ?? '',
       transaction_date: transaction?.transaction_date.slice(0, 10) ?? todayIso(),
+      payment_method: transaction?.payment_method ?? '',
     },
   })
 
@@ -112,6 +114,7 @@ export function TransactionForm({ transaction, defaultType = 'expense', onSubmit
         notes: values.notes.trim() || null,
         tags: parseTags(values.tags),
         transaction_date: values.transaction_date,
+        payment_method: values.payment_method.trim() || null,
       })
     } catch (error) {
       if (applyApiFieldErrors(error, setError, FIELDS)) return
@@ -222,6 +225,12 @@ export function TransactionForm({ transaction, defaultType = 'expense', onSubmit
       <Field label="Description" error={errors.description?.message} required>
         {(props) => (
           <input {...props} {...register('description')} className="input" placeholder="Weekly groceries" />
+        )}
+      </Field>
+
+      <Field label="Payment method" error={errors.payment_method?.message} hint="Optional.">
+        {(props) => (
+          <input {...props} {...register('payment_method')} className="input" placeholder="Credit Card" />
         )}
       </Field>
 

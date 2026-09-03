@@ -175,6 +175,7 @@ export interface Transaction {
   notes: string | null
   tags: string[]
   transaction_date: string
+  payment_method: string | null
   created_at: string
   updated_at: string
 }
@@ -194,6 +195,30 @@ export interface TransactionInput {
   notes?: string | null
   tags?: string[]
   transaction_date: string
+  payment_method?: string | null
+}
+
+/* -------------------------------------------------------------------------- */
+/* Bill scanning                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One transaction extracted from a scanned bill, not yet saved. Missing
+ * `account_id` -- only the user can say which of their accounts paid for it.
+ */
+export interface BillScanDraft {
+  type: 'income' | 'expense'
+  amount: string
+  transaction_date: string
+  description: string
+  category_id: number | null
+  /** Informational only; the id is what gets submitted. */
+  category_name: string | null
+  subcategory_id: number | null
+  /** Informational only; the id is what gets submitted. */
+  subcategory_name: string | null
+  payment_method: string | null
+  notes: string | null
 }
 
 export interface TransactionFilters {

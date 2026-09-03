@@ -184,6 +184,51 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   return (await response.json()) as T
 }
 
+async function sendFile(path: string, file: File, fieldName: string, accessToken: string | null): Promise<Response> {
+  const headers: Record<string, string> = { Accept: 'application/json' }
+  if (accessToken) headers.Authorization = `Bearer ${accessToken}`
+
+  const body = new FormData()
+  body.append(fieldName, file)
+
+  // No Content-Type header: the browser sets one with the correct multipart
+  // boundary itself, which is not something JSON.stringify's callers need.
+  return fetch(buildUrl(path), { method: 'POST', headers, body })
+}
+
+/** Same 401-refresh-and-replay dance as rawRequest, for a multipart upload. */
+async function rawUpload(path: string, file: File, fieldName: string): Promise<Response> {
+  let response = await sendFile(path, file, fieldName, tokenStore.accessToken())
+
+  if (response.status !== 401) return response
+
+  try {
+    const accessToken = await refreshAccessToken()
+    response = await sendFile(path, file, fieldName, accessToken)
+  } catch {
+    tokenStore.clear()
+    throw new SessionExpiredError()
+  }
+
+  if (response.status === 401) {
+    tokenStore.clear()
+    throw new SessionExpiredError()
+  }
+
+  return response
+}
+
+/** Uploads a file as multipart/form-data and returns the parsed JSON body. */
+export async function upload<T>(path: string, file: File, fieldName = 'file'): Promise<T> {
+  const response = await rawUpload(path, file, fieldName)
+  if (!response.ok) throw await toApiError(response)
+
+  const contentType = response.headers.get('Content-Type') ?? ''
+  if (!contentType.includes('application/json')) return undefined as T
+
+  return (await response.json()) as T
+}
+
 /**
  * Downloads a file through the same authenticated pipeline.
  *
