@@ -76,6 +76,7 @@ export const transactionSchema = z
     /** Comma-separated in the field, split into an array on submit. */
     tags: z.string(),
     transaction_date: isoDate,
+    payment_method: z.string().max(60, 'Payment method must be 60 characters or fewer'),
   })
   .superRefine((values, ctx) => {
     // The category/destination requirement flips with the type, which is

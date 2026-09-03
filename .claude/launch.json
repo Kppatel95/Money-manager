@@ -4,7 +4,12 @@
     {
       "name": "backend",
       "runtimeExecutable": "php",
-      "runtimeArgs": ["-S", "localhost:8000", "-t", "backend/public"],
+      "runtimeArgs": [
+        "-d", "upload_max_filesize=15M",
+        "-d", "post_max_size=16M",
+        "-S", "localhost:8000",
+        "-t", "backend/public"
+      ],
       "port": 8000
     },
     {

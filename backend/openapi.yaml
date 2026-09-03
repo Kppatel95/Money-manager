@@ -498,6 +498,42 @@ paths:
         "204": { description: Deleted }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /bill-scans:
+    post:
+      tags: [Transactions]
+      summary: Scan a bill/receipt/statement into draft transactions
+      description: >
+        Sends the uploaded image or PDF to Claude and returns one draft per
+        bill it finds -- a PDF containing several receipts or a statement
+        with several line items returns several drafts. Nothing is saved;
+        each draft is submitted separately to POST /transactions once the
+        user reviews it and picks an account.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: "JPEG, PNG, WEBP or PDF, up to 15MB."
+      responses:
+        "200":
+          description: Draft transactions, possibly empty if nothing looked like a bill
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/BillScanDraft" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "502": { description: "The Anthropic API is not configured or failed to process the file." }
+
   /budgets:
     get:
       tags: [Budgets]
@@ -830,6 +866,7 @@ components:
             - type: string
               description: "Comma-separated is also accepted."
         transaction_date: { type: string, format: date }
+        payment_method: { type: string, nullable: true, maxLength: 60, example: "Credit Card" }
 
     Transaction:
       type: object
@@ -854,8 +891,27 @@ components:
           type: array
           items: { type: string }
         transaction_date: { type: string, format: date }
+        payment_method: { type: string, nullable: true }
         created_at: { type: string }
         updated_at: { type: string }
+
+    BillScanDraft:
+      type: object
+      description: >
+        A transaction extracted from a scanned bill, not yet saved. Shaped
+        like TransactionInput minus account_id, which only the user can
+        supply, plus category_name for display.
+      properties:
+        type: { type: string, enum: [income, expense] }
+        amount: { type: string, example: "42.50" }
+        transaction_date: { type: string, format: date }
+        description: { type: string }
+        category_id: { type: integer, nullable: true }
+        category_name: { type: string, nullable: true }
+        subcategory_id: { type: integer, nullable: true }
+        subcategory_name: { type: string, nullable: true }
+        payment_method: { type: string, nullable: true }
+        notes: { type: string, nullable: true }
 
     PageMeta:
       type: object

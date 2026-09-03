@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { transactionsApi } from '../api/resources'
+import { billScansApi, transactionsApi } from '../api/resources'
 import { Badge, CategoryChip } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -10,12 +10,13 @@ import { PageHeader } from '../components/ui/PageHeader'
 import { EmptyState, ErrorState, SkeletonRows, Spinner } from '../components/ui/States'
 import { useReferenceData } from '../context/ReferenceDataContext'
 import { useToast } from '../context/ToastContext'
+import { BillScanReview } from '../forms/BillScanReview'
 import { TransactionForm } from '../forms/TransactionForm'
 import { useAsync } from '../hooks/useAsync'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { formatDate } from '../lib/dates'
 import { formatCents } from '../lib/money'
-import type { Transaction, TransactionFilters, TransactionInput, TransactionType } from '../types'
+import type { BillScanDraft, Transaction, TransactionFilters, TransactionInput, TransactionType } from '../types'
 import { TRANSACTION_TYPES } from '../types'
 
 const PER_PAGE = 20
@@ -65,6 +66,11 @@ export function TransactionsPage() {
   const [isCreating, setCreating] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<Transaction | null>(null)
   const [isExporting, setExporting] = useState(false)
+
+  const [isScanOpen, setScanOpen] = useState(false)
+  const [isScanning, setScanning] = useState(false)
+  const [scanDrafts, setScanDrafts] = useState<BillScanDraft[] | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const patchParams = (patch: Record<string, string | undefined>, resetPage = true) => {
     const next = new URLSearchParams(params)
@@ -153,6 +159,31 @@ export function TransactionsPage() {
     }
   }
 
+  const closeScan = () => {
+    setScanOpen(false)
+    setScanDrafts(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const pickBillFile = async (file: File | undefined) => {
+    if (!file) return
+    setScanning(true)
+    try {
+      const drafts = await billScansApi.scan(file)
+      setScanDrafts(drafts)
+    } catch (cause) {
+      toast.error(cause)
+    } finally {
+      setScanning(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const afterScanSaved = () => {
+    closeScan()
+    afterWrite()
+  }
+
   if (error && !data) return <ErrorState error={error} onRetry={reload} />
 
   return (
@@ -164,6 +195,9 @@ export function TransactionsPage() {
           <>
             <Button onClick={exportCsv} loading={isExporting} disabled={transactions.length === 0 && !hasFilters}>
               Export CSV
+            </Button>
+            <Button onClick={() => setScanOpen(true)} disabled={activeAccounts.length === 0}>
+              Scan bill
             </Button>
             <Button variant="primary" onClick={() => setCreating(true)} disabled={activeAccounts.length === 0}>
               New transaction
@@ -463,6 +497,39 @@ export function TransactionsPage() {
             setEditing(null)
           }}
         />
+      </Modal>
+
+      <Modal open={isScanOpen} size="lg" title="Scan a bill" onClose={closeScan}>
+        {scanDrafts === null ? (
+          <div className="form">
+            <p className="text-muted">
+              Upload a photo of a receipt, or a PDF of one or more bills or a statement. Each bill found becomes an
+              editable draft transaction you can review before saving.
+            </p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,application/pdf"
+              disabled={isScanning}
+              onChange={(event) => {
+                void pickBillFile(event.target.files?.[0])
+              }}
+            />
+            {isScanning && (
+              <p className="text-muted">
+                <Spinner label="Reading the file" /> Reading the file — this can take a little while for a
+                multi-page PDF.
+              </p>
+            )}
+            <div className="form__actions">
+              <Button variant="ghost" onClick={closeScan} disabled={isScanning}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <BillScanReview drafts={scanDrafts} onSaved={afterScanSaved} onCancel={closeScan} />
+        )}
       </Modal>
 
       <ConfirmDialog

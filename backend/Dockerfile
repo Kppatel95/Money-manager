@@ -2,9 +2,11 @@
 # Composer's autoloader.
 FROM php:8.2-cli-alpine
 
-# pdo_sqlite and sqlite3 ship enabled in the official image; the sqlite-libs
-# package is what the extension links against at runtime.
-RUN apk add --no-cache sqlite-libs
+# pdo_sqlite, sqlite3, curl and fileinfo ship enabled in the official image;
+# sqlite-libs is what pdo_sqlite links against at runtime, and ca-certificates
+# is what lets curl verify TLS certs when the bill-scan feature calls out to
+# the Anthropic API over HTTPS.
+RUN apk add --no-cache sqlite-libs ca-certificates
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
@@ -30,4 +32,4 @@ EXPOSE 8000
 
 # Migrate before serving: the container comes up with a schema that matches
 # the code it is running.
-CMD ["sh", "-c", "php bin/migrate.php && php -S 0.0.0.0:8000 -t public"]
+CMD ["sh", "-c", "php bin/migrate.php && php -d upload_max_filesize=15M -d post_max_size=16M -S 0.0.0.0:8000 -t public"]

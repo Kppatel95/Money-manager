@@ -1,8 +1,9 @@
-import { download, request } from './client'
+import { download, request, upload } from './client'
 import type {
   Account,
   AccountBalance,
   AccountInput,
+  BillScanDraft,
   Budget,
   BudgetInput,
   BudgetMeta,
@@ -152,6 +153,15 @@ export const transactionsApi = {
   exportCsv(filters: TransactionFilters = {}): Promise<void> {
     const { page: _page, per_page: _perPage, ...rest } = filters
     return download('/transactions/export', { query: transactionQuery(rest) }, 'transactions.csv')
+  },
+}
+
+/* -------------------------------------------------------------------------- */
+
+export const billScansApi = {
+  /** Uploads a receipt/bill/statement (image or PDF) and returns one draft per bill found. */
+  async scan(file: File): Promise<BillScanDraft[]> {
+    return unwrap(await upload<Envelope<BillScanDraft[]>>('/bill-scans', file))
   },
 }
 
