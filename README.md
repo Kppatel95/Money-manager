@@ -31,15 +31,23 @@ anyway.
 ## Features
 
 - Registration and login; a 15-minute JWT access token plus a 7-day refresh
-  token that rotates on every use, and login rate limiting.
+  token that rotates on every use, login rate limiting (an email locks out
+  after 5 failed attempts in 15 minutes), and a self-service password reset by
+  email that never reveals whether an address is registered.
 - **Accounts** of five kinds (cash, bank, card, wallet, savings), each with an
   opening balance, a currency label, and a balance derived from its
   transactions. Deleting an account that has history archives it instead.
-- **Categories**: a shared set of system defaults every user sees, plus your
-  own, with an icon and colour.
+- **Categories and subcategories**: a shared set of system default categories
+  every user sees, plus your own, each optionally narrowed by a subcategory
+  (Food -> Groceries, Transport -> Fuel, and so on).
 - **Transactions**: income, expense and transfers between your own accounts,
-  with description, notes and tags. Filter by account, category, type, date
-  range or free-text search; paginated; exportable as CSV.
+  with description, notes, tags and a free-text payment method. Filter by
+  account, category, subcategory, type, date range or free-text search;
+  paginated; exportable as CSV.
+- **Scan a bill**: upload a receipt photo or a PDF -- a single bill, several
+  bills, or a whole statement -- and Claude extracts one draft transaction per
+  bill (amount, date, category/subcategory, payment method) for review before
+  anything is saved.
 - **Budgets**: a monthly limit per category, returned with spend and remainder
   computed from the ledger.
 - **Recurring transactions**: daily, weekly or monthly schedules that
@@ -64,7 +72,8 @@ backend/    PHP API
     Repositories/       the only place SQL lives
     Exceptions/         domain errors that map to status codes
     Http/               composition root and error handler
-    Support/            request, response, logger, money, env, CSV
+    Support/            request, response, logger, money, env, CSV,
+                        Anthropic + Resend clients
     Validation/         input validation
   tests/                PHPUnit unit + integration suites
   openapi.yaml          API specification
@@ -153,6 +162,19 @@ the SQLite file and logs on a named volume, so `docker compose down` preserves
 your data (`down -v` does not). Set `JWT_SECRET` in the environment before
 using it for anything real.
 
+### Optional external services
+
+Two features call an outside API and degrade gracefully without one configured:
+
+| Feature | Env var | Get one at | Without it |
+|---------|---------|------------|------------|
+| Scan a bill | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com/) | `/bill-scans` returns a clear error instead of drafts |
+| Password reset email | `RESEND_API_KEY` | [resend.com](https://resend.com/) | a reset can still be requested and the response is identical either way -- the email just never sends, and the attempt is only logged |
+
+Both are read from `backend/.env` (`cp backend/.env.example backend/.env` to
+start); see that file for the full list of optional keys, including
+`MAIL_FROM` and `FRONTEND_URL` (where the reset link points).
+
 ### API summary
 
 Full request/response schemas are in [`backend/openapi.yaml`](backend/openapi.yaml).
@@ -162,6 +184,8 @@ Full request/response schemas are in [`backend/openapi.yaml`](backend/openapi.ya
 | POST | `/api/v1/auth/register` | no | `name`, `email`, `password` (8+ chars) |
 | POST | `/api/v1/auth/login` | no | returns an access + refresh token pair |
 | POST | `/api/v1/auth/refresh` | no | `refresh_token`; rotates it |
+| POST | `/api/v1/auth/forgot-password` | no | `email`; always 204, whether or not it's registered |
+| POST | `/api/v1/auth/reset-password` | no | `token`, `password`; single-use, signs out every session |
 | POST | `/api/v1/auth/logout` | yes | revokes the refresh token |
 | GET | `/api/v1/auth/me` | yes | the signed-in user |
 | GET | `/api/v1/accounts` | yes | `?include_archived=true` to see archived ones |
@@ -170,10 +194,12 @@ Full request/response schemas are in [`backend/openapi.yaml`](backend/openapi.ya
 | GET | `/api/v1/accounts/{id}/balance` | yes | balance plus the movements behind it |
 | GET/POST | `/api/v1/categories` | yes | `?type=income\|expense` |
 | PUT/DELETE | `/api/v1/categories/{id}` | yes | user-owned only; system defaults are 403 |
-| GET | `/api/v1/transactions` | yes | `account_id`, `category_id`, `type`, `date_from`, `date_to`, `search`, `page`, `per_page` |
+| GET | `/api/v1/subcategories` | yes | `?category_id=`; system defaults only, for now |
+| GET | `/api/v1/transactions` | yes | `account_id`, `category_id`, `subcategory_id`, `type`, `date_from`, `date_to`, `search`, `page`, `per_page` |
 | POST | `/api/v1/transactions` | yes | income, expense or transfer |
 | GET/PUT/DELETE | `/api/v1/transactions/{id}` | yes | PUT accepts a partial payload |
 | GET | `/api/v1/transactions/export` | yes | CSV of the filtered set, unpaginated |
+| POST | `/api/v1/bill-scans` | yes | multipart `file` (image or PDF); returns draft transactions, none saved |
 | GET/POST | `/api/v1/budgets` | yes | `?month=YYYY-MM`; each budget carries `spent`/`remaining` |
 | PUT/DELETE | `/api/v1/budgets/{id}` | yes | |
 | GET/POST | `/api/v1/recurring-transactions` | yes | `daily`, `weekly` or `monthly` |
@@ -228,16 +254,40 @@ rotated on every use. Logging out revokes the refresh token; the access token
 keeps working until it expires, which is the standard tradeoff for stateless
 tokens and the reason theirs is short.
 
+**A password reset must never reveal who has an account.**
+`/auth/forgot-password` does the same amount of work and returns the same
+response whether or not the email is registered -- only a real match ever gets
+an email sent, and a mail-delivery failure is logged, never surfaced, so
+neither the response nor an outage can be used to fingerprint accounts. The
+reset token itself follows the refresh token's shape exactly: opaque, hashed
+at rest, single-use, and requesting a new link invalidates whichever one came
+before it.
+
+**The bill scanner never trusts the model's category ids.** Claude is handed
+the caller's real categories and subcategories and asked to pick ids from that
+list -- but every id in its response is re-checked against what actually
+exists, and a subcategory id is additionally checked against the category
+chosen, before a draft ever reaches the review screen. A hallucinated or
+stale id is dropped rather than trusted. The bill itself (image or PDF) is
+sent to Claude directly; PDFs are read natively, so there is no local
+rasterising step.
+
+**Two outbound API calls, no HTTP client dependency.** `AnthropicClient` (bill
+scanning) and `EmailClient` (password reset) are each a small
+`curl_init`/`curl_exec` wrapper rather than a library, the same reasoning as
+the hand-rolled logger above -- each is used from exactly one place, so a
+dependency would buy less than it costs.
+
 ## The frontend
 
 A multi-page React app built against the API above. Seven signed-in routes plus
-login and registration:
+login, registration, and a forgot/reset-password pair:
 
 | Route | What it does |
 |-------|--------------|
 | `/` | Dashboard: net worth, the month's income/expense/net/savings rate, a category donut, a six-month income-vs-expense chart, budget progress and account balances |
 | `/accounts` | Account cards with derived balances, opening balance and movement; add, edit, archive |
-| `/transactions` | Filterable, searchable, paginated ledger; income/expense/transfer form; CSV export of the current filter set |
+| `/transactions` | Filterable, searchable, paginated ledger; income/expense/transfer form; scan a bill into editable drafts; CSV export of the current filter set |
 | `/budgets` | Per-month view with limit, spend, remainder and a progress bar per category; add, edit, delete |
 | `/recurring` | Schedules with frequency, next run and a pause/resume toggle |
 | `/reports` | Monthly totals, the trend chart, a ranked category table and a CSV export with its own range and filters |
@@ -314,8 +364,8 @@ npm run dev
 
 The dev server comes up on `http://localhost:5173` and expects the API on
 `http://localhost:8000` unless `VITE_API_URL` says otherwise. Register a user
-from the sign-up screen; the backend seeds a shared set of categories, so the
-only thing to do first is add an account.
+from the sign-up screen; the backend seeds a shared set of categories and
+subcategories, so the only thing to do first is add an account.
 
 ```bash
 npm run typecheck   # tsc --noEmit across the project references

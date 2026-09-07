@@ -132,6 +132,53 @@ paths:
                   data: { $ref: "#/components/schemas/Session" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request a password reset email
+      description: |
+        Always returns 204, whether or not the email belongs to an account --
+        the response never reveals which emails are registered. When it does,
+        a link valid for one hour is emailed and any previous unused link for
+        that account stops working.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "204": { description: Request accepted }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Set a new password using a reset link's token
+      description: |
+        Consumes the token -- it cannot be used again. Also revokes every
+        refresh token for the account (signing out everywhere) and clears any
+        login lockout.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string, minLength: 8, format: password }
+      responses:
+        "204": { description: Password changed }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
   /auth/logout:
     post:
       tags: [Auth]

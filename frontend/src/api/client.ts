@@ -4,7 +4,7 @@ import { tokenStore } from './tokens'
 const BASE_URL = `${(import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replace(/\/+$/, '')}/api/v1`
 
 /** Endpoints that must never trigger the refresh-and-retry dance. */
-const AUTH_PATHS = ['/auth/login', '/auth/register', '/auth/refresh']
+const AUTH_PATHS = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/forgot-password', '/auth/reset-password']
 
 export class ApiError extends Error {
   readonly status: number

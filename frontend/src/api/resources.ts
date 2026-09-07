@@ -12,11 +12,13 @@ import type {
   CategoryType,
   DashboardSummary,
   Envelope,
+  ForgotPasswordInput,
   LoginInput,
   PaginatedEnvelope,
   RecurringTransaction,
   RecurringTransactionInput,
   RegisterInput,
+  ResetPasswordInput,
   Session,
   Subcategory,
   Transaction,
@@ -51,6 +53,15 @@ export const authApi = {
 
   async logout(refreshToken: string): Promise<void> {
     await request<void>('/auth/logout', { method: 'POST', body: { refresh_token: refreshToken } })
+  },
+
+  /** Always resolves the same way whether or not the email is registered. */
+  async forgotPassword(input: ForgotPasswordInput): Promise<void> {
+    await request<void>('/auth/forgot-password', { method: 'POST', body: input })
+  },
+
+  async resetPassword(input: ResetPasswordInput): Promise<void> {
+    await request<void>('/auth/reset-password', { method: 'POST', body: input })
   },
 }
 
