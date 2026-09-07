@@ -19,6 +19,7 @@ use App\Repositories\AccountRepository;
 use App\Repositories\BudgetRepository;
 use App\Repositories\CategoryRepository;
 use App\Repositories\LoginAttemptRepository;
+use App\Repositories\PasswordResetTokenRepository;
 use App\Repositories\RecurringTransactionRepository;
 use App\Repositories\RefreshTokenRepository;
 use App\Repositories\SubcategoryRepository;
@@ -35,6 +36,7 @@ use App\Services\RecurringTransactionService;
 use App\Services\SubcategoryService;
 use App\Services\TransactionService;
 use App\Support\AnthropicClient;
+use App\Support\EmailClient;
 use App\Support\Env;
 use App\Support\Logger;
 use App\Support\Request;
@@ -102,7 +104,10 @@ final class Application
             $users,
             new RefreshTokenRepository($this->pdo),
             new LoginAttemptRepository($this->pdo),
+            new PasswordResetTokenRepository($this->pdo),
             $jwt,
+            new EmailClient(Env::get('RESEND_API_KEY'), Env::get('MAIL_FROM', 'onboarding@resend.dev') ?? 'onboarding@resend.dev'),
+            Env::get('FRONTEND_URL', 'http://localhost:5173') ?? 'http://localhost:5173',
             $this->logger
         );
 
@@ -151,6 +156,8 @@ final class Application
             $r->post('/auth/register', fn (Request $q) => $authController->register($q));
             $r->post('/auth/login', fn (Request $q) => $authController->login($q));
             $r->post('/auth/refresh', fn (Request $q) => $authController->refresh($q));
+            $r->post('/auth/forgot-password', fn (Request $q) => $authController->forgotPassword($q));
+            $r->post('/auth/reset-password', fn (Request $q) => $authController->resetPassword($q));
             $r->post('/auth/logout', $this->authed([$authController, 'logout']));
             $r->get('/auth/me', $this->authed([$authController, 'me']));
 

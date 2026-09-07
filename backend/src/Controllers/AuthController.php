@@ -35,6 +35,20 @@ final class AuthController extends Controller
         return Response::data($this->auth->refresh(is_string($token) ? $token : null));
     }
 
+    public function forgotPassword(Request $request): Response
+    {
+        $this->auth->requestPasswordReset($request->all());
+
+        return Response::noContent();
+    }
+
+    public function resetPassword(Request $request): Response
+    {
+        $this->auth->resetPassword($request->all());
+
+        return Response::noContent();
+    }
+
     public function logout(Request $request, int $userId): Response
     {
         $token = $request->input('refresh_token');

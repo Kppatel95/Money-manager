@@ -10,9 +10,13 @@ import { useAuth } from '../context/AuthContext'
 import { loginSchema, type LoginFormValues } from '../lib/schemas'
 import { AuthShell } from './AuthShell'
 
+/** After this many wrong-password attempts in a row, offer the reset link. */
+const ATTEMPTS_BEFORE_OFFERING_RESET = 3
+
 export function LoginPage() {
   const { login } = useAuth()
   const [formError, setFormError] = useState<string | null>(null)
+  const [failedAttempts, setFailedAttempts] = useState(0)
 
   const {
     register,
@@ -35,6 +39,9 @@ export function LoginPage() {
         const minutes = Math.ceil((error.retryAfter ?? 900) / 60)
         setFormError(`Too many failed attempts. Try again in about ${minutes} minute${minutes === 1 ? '' : 's'}.`)
         return
+      }
+      if (error instanceof ApiError && error.code === 'UNAUTHORIZED') {
+        setFailedAttempts((count) => count + 1)
       }
       setFormError(errorMessage(error))
     }
@@ -78,6 +85,12 @@ export function LoginPage() {
         <Button type="submit" variant="primary" loading={isSubmitting} className="btn--block">
           Sign in
         </Button>
+
+        {failedAttempts >= ATTEMPTS_BEFORE_OFFERING_RESET && (
+          <p className="auth__footer">
+            Having trouble? <Link to="/forgot-password">Reset your password</Link>
+          </p>
+        )}
       </form>
     </AuthShell>
   )

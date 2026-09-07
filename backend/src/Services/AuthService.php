@@ -9,10 +9,13 @@ use App\Exceptions\ConflictException;
 use App\Exceptions\RateLimitedException;
 use App\Exceptions\UnauthorizedException;
 use App\Repositories\LoginAttemptRepository;
+use App\Repositories\PasswordResetTokenRepository;
 use App\Repositories\RefreshTokenRepository;
 use App\Repositories\UserRepository;
+use App\Support\EmailClient;
 use App\Support\Logger;
 use App\Validation\Validator;
+use Throwable;
 
 /**
  * Registration, login, token refresh and logout.
@@ -31,12 +34,16 @@ final class AuthService
     public const MAX_FAILED_ATTEMPTS = 5;
     public const ATTEMPT_WINDOW_SECONDS = 900;   // 15 minutes
     public const REFRESH_TTL_SECONDS = 604800;   // 7 days
+    public const RESET_TTL_SECONDS = 3600;       // 1 hour
 
     public function __construct(
         private readonly UserRepository $users,
         private readonly RefreshTokenRepository $refreshTokens,
         private readonly LoginAttemptRepository $attempts,
+        private readonly PasswordResetTokenRepository $resetTokens,
         private readonly JwtService $jwt,
+        private readonly EmailClient $email,
+        private readonly string $frontendUrl,
         private readonly Logger $logger = new Logger(null)
     ) {
     }
@@ -141,6 +148,86 @@ final class AuthService
     }
 
     /**
+     * Always does the same amount of work and returns nothing either way,
+     * whether or not the email belongs to an account -- an attacker asking
+     * "does this email have an account?" must not be able to tell from the
+     * response. Only a real match ever gets an email sent.
+     *
+     * @param array<string, mixed> $payload
+     */
+    public function requestPasswordReset(array $payload): void
+    {
+        $v = new Validator($payload);
+        $email = $v->requiredEmail();
+        $v->validate();
+
+        $user = $this->users->findByEmail($email);
+
+        if ($user === null) {
+            return;
+        }
+
+        $userId = (int) $user['id'];
+        $token = bin2hex(random_bytes(32));
+
+        // Only the newest link is ever valid; an old, forgotten email cannot
+        // be used later to reset the password out from under the user.
+        $this->resetTokens->deleteForUser($userId);
+        $this->resetTokens->store(
+            $userId,
+            $this->hash($token),
+            gmdate('Y-m-d H:i:s', time() + self::RESET_TTL_SECONDS)
+        );
+        $this->resetTokens->deleteExpired(gmdate('Y-m-d H:i:s'));
+
+        $link = rtrim($this->frontendUrl, '/') . '/reset-password?token=' . urlencode($token);
+
+        try {
+            $this->email->send($email, 'Reset your Ledger password', $this->resetEmailHtml($link));
+        } catch (Throwable $e) {
+            // Never let a mail-delivery failure change the response or leak
+            // to the client -- log it and move on exactly as if it had sent.
+            $this->logger->warning('Could not send password reset email: {error}', [
+                'error' => $e->getMessage(),
+                'user_id' => $userId,
+            ]);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    public function resetPassword(array $payload): void
+    {
+        $v = new Validator($payload);
+        $token = $v->requiredString('token');
+        $password = $v->requiredPassword();
+        $v->validate();
+
+        $row = $this->resetTokens->findByHash($this->hash($token));
+
+        if ($row === null || $row['expires_at'] < gmdate('Y-m-d H:i:s')) {
+            throw new UnauthorizedException('This reset link is invalid or has expired.');
+        }
+
+        $userId = (int) $row['user_id'];
+
+        $this->users->updatePassword($userId, password_hash($password, PASSWORD_BCRYPT));
+        $this->resetTokens->delete((int) $row['id']);
+
+        // A password reset is a good reason to sign everything else out, and
+        // to forgive whatever lockout the user reset their way past.
+        $this->refreshTokens->revokeAllForUser($userId);
+
+        $user = $this->users->findById($userId);
+        if ($user !== null) {
+            $this->attempts->clear($user['email']);
+        }
+
+        $this->logger->info('Password reset for user {user_id}.', ['user_id' => $userId]);
+    }
+
+    /**
      * @param array<string, mixed> $user
      * @return array<string, mixed>
      */
@@ -213,5 +300,15 @@ final class AuthService
     private function hash(string $token): string
     {
         return hash('sha256', $token);
+    }
+
+    private function resetEmailHtml(string $link): string
+    {
+        $safeLink = htmlspecialchars($link, ENT_QUOTES, 'UTF-8');
+        $minutes = (int) (self::RESET_TTL_SECONDS / 60);
+
+        return "<p>Someone asked to reset the password on this Ledger account.</p>"
+            . "<p><a href=\"{$safeLink}\">Choose a new password</a></p>"
+            . "<p>This link expires in {$minutes} minutes. If you didn't request this, you can ignore this email.</p>";
     }
 }

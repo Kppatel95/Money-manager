@@ -8,11 +8,13 @@ import { ToastProvider } from './context/ToastContext'
 import { AccountsPage } from './pages/AccountsPage'
 import { BudgetsPage } from './pages/BudgetsPage'
 import { DashboardPage } from './pages/DashboardPage'
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { LoginPage } from './pages/LoginPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { RecurringPage } from './pages/RecurringPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { ReportsPage } from './pages/ReportsPage'
+import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { TransactionsPage } from './pages/TransactionsPage'
 
@@ -43,6 +45,22 @@ export default function App() {
                 element={
                   <GuestOnly>
                     <RegisterPage />
+                  </GuestOnly>
+                }
+              />
+              <Route
+                path="/forgot-password"
+                element={
+                  <GuestOnly>
+                    <ForgotPasswordPage />
+                  </GuestOnly>
+                }
+              />
+              <Route
+                path="/reset-password"
+                element={
+                  <GuestOnly>
+                    <ResetPasswordPage />
                   </GuestOnly>
                 }
               />
